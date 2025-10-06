@@ -1,5 +1,6 @@
 require('dotenv').config();
 const net = require('net');
+const { getJob } = require("./job");
 
 
 
@@ -49,12 +50,12 @@ server.listen(process.env.STRATUM_PORT, process.env.STRATUM_HOST, () =>
 
 
 
-function handleMessage(message, socket)
+async function handleMessage(message, socket)
 {
     switch (message.method) 
     {
         case 'mining.subscribe':
-            sendMessage(/*message, socket add responses here*/);
+            sendMessage(await getJob(), socket);
         break;
 
         case 'mining.authorize':
@@ -79,5 +80,4 @@ function sendMessage(message, socket)
 {
     message = JSON.stringify(message) + '\n';
     socket.write(message);
-    console.log("pool: ", message);
 }

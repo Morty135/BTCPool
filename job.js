@@ -1,5 +1,6 @@
+require('dotenv').config();
 const { getBlockTemplate } = require("./getTemplate");
-const { buildCoinbase } = require("./coinbase");
+const { buildCoinbaseTx } = require("./coinbase");
 
 function swapHexEndian(hex) {
     return hex.match(/../g).reverse().join("");
@@ -11,7 +12,7 @@ function buildJob(template, payoutAddress)
 
     const prevHashLE = swapHexEndian(template.previousblockhash);
 
-    const coinbaseTx = buildCoinbase(template, payoutAddress);
+    const coinbaseTx = buildCoinbaseTx(template, payoutAddress);
 
     const merkleBranches = template.transactions.map((tx) => tx.txid);
 
@@ -27,11 +28,10 @@ function buildJob(template, payoutAddress)
     };
 }
 
-async function main() {
+async function getJob() {
     const template = await getBlockTemplate();
-    const payout = "1YourLegacyAddressHere"; // replace with your own
-    const job = buildJob(template, payout);
-    console.log("Job for miner:\n", JSON.stringify(job, null, 2));
+    const job = buildJob(template, process.env.POOL_ADDRESS);
+    return job;
 }
 
-main();
+module.exports = { getJob };
