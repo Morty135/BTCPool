@@ -1,6 +1,7 @@
 require('dotenv').config();
 const net = require('net');
 const { getJob } = require("./job");
+const fs = require("fs")
 
 
 
@@ -79,5 +80,6 @@ async function handleMessage(message, socket)
 function sendMessage(message, socket)
 {
     message = JSON.stringify(message) + '\n';
+    fs.appendFileSync('./pool.log', message);
     socket.write(message);
 }
