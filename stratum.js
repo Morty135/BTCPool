@@ -1,6 +1,6 @@
 require('dotenv').config();
 const net = require('net');
-const { getJob } = require("./job");
+const { getJob, submitJob } = require("./job");
 const fs = require("fs")
 
 
@@ -28,6 +28,8 @@ const server = net.createServer((socket) =>
             message = JSON.parse(data.toString('utf8'));
         }
         console.log("miner: ", message);
+        logMessage = JSON.stringify(message) + '\n';
+        fs.appendFileSync('./pool.log', logMessage);
         handleMessage(message, socket);
     });
 
@@ -56,11 +58,27 @@ async function handleMessage(message, socket)
     switch (message.method) 
     {
         case 'mining.subscribe':
+            sendMessage({
+                id: message.id,
+                result: [
+                    [["mining.set_difficulty", "subid1"], ["mining.notify", "subid2"]],
+                    "session1",
+                    4
+                ],
+                error: null
+            }, socket);
+
+            // After subscription, send difficulty and job. its set to 1 for production ready pool I will need to make it dynamic.
+            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
             sendMessage(await getJob(), socket);
         break;
 
         case 'mining.authorize':
-            sendMessage();
+            sendMessage({
+                id: message.id,
+                result: true,
+                error: null
+            }, socket);
         break;
 
         case 'mining.extranonce.subscribe':
@@ -79,6 +97,7 @@ async function handleMessage(message, socket)
 
 function sendMessage(message, socket)
 {
+    console.log(message);
     message = JSON.stringify(message) + '\n';
     fs.appendFileSync('./pool.log', message);
     socket.write(message);
