@@ -1,6 +1,7 @@
 require('dotenv').config();
 const net = require('net');
 const { getJob, submitJob } = require("./job");
+const database = require("./database");
 const fs = require("fs")
 
 
@@ -27,7 +28,6 @@ const server = net.createServer((socket) =>
         {
             message = JSON.parse(data.toString('utf8'));
         }
-        console.log("miner: ", message);
         logMessage = JSON.stringify(message) + '\n';
         fs.appendFileSync('./pool.log', logMessage);
         handleMessage(message, socket);
@@ -74,11 +74,8 @@ async function handleMessage(message, socket)
         break;
 
         case 'mining.authorize':
-            sendMessage({
-                id: message.id,
-                result: true,
-                error: null
-            }, socket);
+            result = await database.authorizeMiner(message);
+            sendMessage(result, socket);
         break;
 
         case 'mining.extranonce.subscribe':
@@ -97,7 +94,6 @@ async function handleMessage(message, socket)
 
 function sendMessage(message, socket)
 {
-    console.log(message);
     message = JSON.stringify(message) + '\n';
     fs.appendFileSync('./pool.log', message);
     socket.write(message);

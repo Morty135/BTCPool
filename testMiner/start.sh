@@ -1,1 +1,1 @@
-./minerd -o stratum+tcp://127.0.0.1:3333 -u Morty -a sha256d
+./minerd -o stratum+tcp://127.0.0.1:3333 -u Morty -p pool -a sha256d

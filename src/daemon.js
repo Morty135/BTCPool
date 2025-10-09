@@ -1,4 +1,5 @@
 const axios = require("axios");
+require('dotenv').config();
 
 const rpcUser = process.env.RPC_USER;
 const rpcPassword = process.env.RPC_PASSWORD;
