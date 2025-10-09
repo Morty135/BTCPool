@@ -74,8 +74,8 @@ async function handleMessage(message, socket)
         break;
 
         case 'mining.authorize':
-            result = await database.authorizeMiner(message);
-            sendMessage(result, socket);
+            response = await database.authorizeMiner(message);
+            sendMessage(response, socket);
         break;
 
         case 'mining.extranonce.subscribe':

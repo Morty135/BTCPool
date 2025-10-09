@@ -27,8 +27,9 @@ async function authorizeMiner(message)
             return response;
         }
 
-        const isMatch = await bcrypt.compare(password, miner.password);
-        if (!isMatch) {
+        //use bcryptjs for this later
+        //const isMatch = await bcrypt.compare(password, miner.password);
+        if (password != miner.password) {
             response.error = 'Invalid password';
             return response;
         }
