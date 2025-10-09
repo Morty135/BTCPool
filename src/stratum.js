@@ -82,6 +82,7 @@ async function handleMessage(message, socket)
         break;
 
         case 'mining.submit':
+            console.log(message);
         break;
 
         default:
