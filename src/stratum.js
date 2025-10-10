@@ -21,6 +21,7 @@ function isJSON(str) {
 const server = net.createServer((socket) => 
 {
     console.log('Miner connected');
+    const sessionId = database.createSession(socket);
 
     socket.on('data', (data) => 
     {
@@ -31,7 +32,7 @@ const server = net.createServer((socket) =>
         }
         logMessage = JSON.stringify(message) + '\n';
         fs.appendFileSync('./pool.log', logMessage);
-        handleMessage(message, socket);
+        handleMessage(message, socket, sessionId);
     });
 
     socket.on('end', () => 
@@ -54,7 +55,7 @@ server.listen(process.env.STRATUM_PORT, process.env.STRATUM_HOST, () =>
 
 
 
-async function handleMessage(message, socket)
+async function handleMessage(message, socket, sessionId)
 {
     var extranonce1;
     switch (message.method) 
@@ -72,7 +73,7 @@ async function handleMessage(message, socket)
                 error: null
             }, socket);
 
-            //database.saveSession();
+            database.updateSession(sessionId);
 
             // After subscription, send difficulty and job. its set to 1 for production ready pool I will need to make it dynamic.
         break;

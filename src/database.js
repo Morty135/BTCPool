@@ -1,12 +1,14 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
+const { v4: uuidv4 } = require('uuid');
 
 mongoose.connect(`mongodb://${process.env.DB_HOST}:${process.env.DB_PORT}/stratumPool`, {})
 .then(() => console.log('✅ MongoDB connected'))
 .catch(err => console.error('MongoDB error:', err));
 
 const Miner = require('../models/miner');
+const Session = require("../models/session");
 
 async function authorizeMiner(message)
 {
@@ -46,4 +48,46 @@ async function authorizeMiner(message)
     return response;
 }
 
-module.exports = { authorizeMiner };
+
+
+async function createSession(socket)
+{
+    const sessionId = uuidv4();
+
+    const session = new Session({
+        sessionId: sessionId,
+        ip: socket.remoteAddress
+    });
+    await session.save();
+
+    return sessionId
+}
+
+
+
+async function updateSession(sessionId)
+{
+    const session = await Session.findOne({ sessionId });
+    if (!session) 
+    {
+        response.error = 'Session not found';
+        return error;
+    }
+    await session.save();
+}
+
+
+
+async function closeSession(sessionId)
+{
+    const session = await Session.findOne({ sessionId });
+    if (!session) 
+    {
+        response.error = 'Session not found';
+        return error;
+    }
+    session.status = "closed";
+    await session.save();
+}
+
+module.exports = { authorizeMiner, createSession, updateSession, closeSession};
