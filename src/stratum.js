@@ -2,6 +2,7 @@ require('dotenv').config();
 const net = require('net');
 const { getJob, submitJob } = require("./job");
 const database = require("./database");
+const helperFunctions = require("./helperFunctions");
 const fs = require("fs")
 
 
@@ -55,27 +56,33 @@ server.listen(process.env.STRATUM_PORT, process.env.STRATUM_HOST, () =>
 
 async function handleMessage(message, socket)
 {
+    var extranonce1;
     switch (message.method) 
     {
         case 'mining.subscribe':
+            //in place of nulls subids could be used, in practice they are never used by pools. originally meant for unsubscribe message
+            extranonce1 = helperFunctions.getExtranonce1();
             sendMessage({
                 id: message.id,
                 result: [
-                    [["mining.set_difficulty", "subid1"], ["mining.notify", "subid2"]],
-                    "session1",
+                    [["mining.set_difficulty", null], ["mining.notify", null]],
+                    extranonce1,
                     4
                 ],
                 error: null
             }, socket);
 
+            //database.saveSession();
+
             // After subscription, send difficulty and job. its set to 1 for production ready pool I will need to make it dynamic.
-            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
-            sendMessage(await getJob(), socket);
         break;
 
         case 'mining.authorize':
             response = await database.authorizeMiner(message);
             sendMessage(response, socket);
+
+            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
+            sendMessage(await getJob(), socket);
         break;
 
         case 'mining.extranonce.subscribe':
