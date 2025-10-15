@@ -65,29 +65,37 @@ async function createSession(socket)
 
 
 
-async function updateSession(sessionId)
+function updateSession(sessionId, extranonce)
 {
-    const session = await Session.findOne({ sessionId });
-    if (!session) 
+    try
     {
-        response.error = 'Session not found';
-        return error;
+        Session.findOneAndUpdate({ sessionId },
+            { $set: { lastActivity: Date.now(), extranonce: extranonce, } }
+        );
+        console.log("ya");
+        return "update sucessful";
     }
-    await session.save();
+    catch
+    {
+        return "session update failed";
+    }
 }
 
 
 
 async function closeSession(sessionId)
 {
-    const session = await Session.findOne({ sessionId });
-    if (!session) 
+    try
     {
-        response.error = 'Session not found';
-        return error;
+        Session.findOneAndUpdate({ sessionId },
+            { $set: { status: closed } },
+        );
+        return "update sucessful";
     }
-    session.status = "closed";
-    await session.save();
+    catch
+    {
+        return "session update failed";
+    }
 }
 
 module.exports = { authorizeMiner, createSession, updateSession, closeSession};

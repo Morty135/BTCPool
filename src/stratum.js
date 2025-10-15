@@ -73,7 +73,7 @@ async function handleMessage(message, socket, sessionId)
                 error: null
             }, socket);
 
-            database.updateSession(sessionId);
+            database.updateSession(sessionId, extranonce1);
 
             // After subscription, send difficulty and job. its set to 1 for production ready pool I will need to make it dynamic.
         break;
