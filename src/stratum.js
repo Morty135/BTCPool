@@ -2,10 +2,10 @@ require('dotenv').config();
 const net = require('net');
 const { getJob, submitJob } = require("./job");
 const database = require("./database");
-const helperFunctions = require("./helperFunctions");
 const fs = require("fs")
 
-
+const sessions = database.sessions || new Map();
+const socketSessions = new WeakMap();
 
 function isJSON(str) {
     try {
@@ -16,12 +16,15 @@ function isJSON(str) {
     }
 }
 
+function generateSessionId() {
+    return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+}
+
 
 
 const server = net.createServer((socket) => 
 {
     console.log('Miner connected');
-    const sessionId = database.createSession(socket);
 
     socket.on('data', (data) => 
     {
@@ -32,17 +35,27 @@ const server = net.createServer((socket) =>
         }
         logMessage = JSON.stringify(message) + '\n';
         fs.appendFileSync('./pool.log', logMessage);
-        handleMessage(message, socket, sessionId);
+        handleMessage(message, socket);
     });
 
     socket.on('end', () => 
     {
         console.log('Miner disconnected');
+        const sid = socketSessions.get(socket);
+        if (sid) {
+            sessions.delete(sid);
+            socketSessions.delete(socket);
+        }
     });
 
     socket.on('error', (err) => 
     {
         console.error('Socket error:', err.message);
+        const sid = socketSessions.get(socket);
+        if (sid) {
+            sessions.delete(sid);
+            socketSessions.delete(socket);
+        }
     });
 });
 
@@ -55,42 +68,88 @@ server.listen(process.env.STRATUM_PORT, process.env.STRATUM_HOST, () =>
 
 
 
-async function handleMessage(message, socket, sessionId)
+async function handleMessage(message, socket)
 {
-    var extranonce1;
     switch (message.method) 
     {
         case 'mining.subscribe':
-            //in place of nulls subids could be used, in practice they are never used by pools. originally meant for unsubscribe message
-            extranonce1 = helperFunctions.getExtranonce1();
+            // generate a per-connection session id and return it in the response
+            const sessionId = generateSessionId();
             sendMessage({
                 id: message.id,
                 result: [
-                    [["mining.set_difficulty", null], ["mining.notify", null]],
-                    extranonce1,
+                    [["mining.set_difficulty", "subid1"], ["mining.notify", "subid2"]],
+                    sessionId,
                     4
                 ],
                 error: null
             }, socket);
 
-            database.updateSession(sessionId, extranonce1);
+            // create session entry for later reconstruction
+            const session = {
+                id: sessionId,
+                createdAt: Date.now(),
+                socketRef: true,
+                authorized: false,
+                username: null,
+                lastJob: null,
+                submissions: []
+            };
+            sessions.set(sessionId, session);
+            socketSessions.set(socket, sessionId);
 
-            // After subscription, send difficulty and job. its set to 1 for production ready pool I will need to make it dynamic.
+            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
+
+            const job = await getJob();
+            session.lastJob = job;
+            sendMessage(job, socket);
         break;
 
         case 'mining.authorize':
             response = await database.authorizeMiner(message);
-            sendMessage(response, socket);
 
-            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
-            sendMessage(await getJob(), socket);
+            if (response && response.result === true) {
+                const sid = socketSessions.get(socket);
+                if (sid) {
+                    const s = sessions.get(sid);
+                    if (s) {
+                        s.authorized = true;
+                        s.username = message.params[0];
+                        s.authorizedAt = Date.now();
+                    }
+                }
+            }
+            sendMessage(response, socket);
         break;
 
         case 'mining.extranonce.subscribe':
         break;
 
         case 'mining.submit':
-            console.log(message);
+            // store submission in the in-memory session for later block reconstruction
+            const sid = socketSessions.get(socket);
+            if (!sid) {
+                console.warn('Received submit without session for socket');
+                console.log(message);
+                break;
+            }
+            const s = sessions.get(sid);
+            if (!s) {
+                console.warn('Session not found for submit:', sid);
+                console.log(message);
+                break;
+            }
+
+            const submission = {
+                receivedAt: Date.now(),
+                params: message.params,
+                id: message.id,
+                method: message.method
+            };
+            s.submissions.push(submission);
+
+
+            console.log('Stored submission for later reconstruction:', submission);
         break;
 
         default:

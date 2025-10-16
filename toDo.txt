@@ -1,5 +1,3 @@
 Keep track of jobs
-need to rework the db structure
-the jobs stored in RAM only outputs saved to DB
 finish the job submit function
 make webui
