@@ -2,23 +2,12 @@ require('dotenv').config();
 const net = require('net');
 const { getJob, submitJob } = require("./job");
 const database = require("./database");
-const fs = require("fs")
+const helperFunctions = require("./helperFunctions");
+const fs = require("fs");
+const { Session } = require('inspector');
 
-const sessions = database.sessions || new Map();
+const sessions = database.sessions;
 const socketSessions = new WeakMap();
-
-function isJSON(str) {
-    try {
-        JSON.parse(str.toString('utf8'));
-        return true;
-    } catch (e) {
-        return false;
-    }
-}
-
-function generateSessionId() {
-    return (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
-}
 
 
 
@@ -29,7 +18,7 @@ const server = net.createServer((socket) =>
     socket.on('data', (data) => 
     {
         let message = data;
-        if (isJSON(data)) 
+        if (helperFunctions.isJSON(data)) 
         {
             message = JSON.parse(data.toString('utf8'));
         }
@@ -74,12 +63,12 @@ async function handleMessage(message, socket)
     {
         case 'mining.subscribe':
             // generate a per-connection session id and return it in the response
-            const sessionId = generateSessionId();
+            const sessionId = helperFunctions.generateSessionId();
             sendMessage({
                 id: message.id,
                 result: [
                     [["mining.set_difficulty", "subid1"], ["mining.notify", "subid2"]],
-                    sessionId,
+                    sessionId, // session ID is a valid 4 byte hex so it is also used as extranonce1
                     4
                 ],
                 error: null
