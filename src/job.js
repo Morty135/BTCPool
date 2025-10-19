@@ -42,7 +42,7 @@ async function getJob() {
 
 
 
-async function submitWork(submission, job) {
+async function submitJob(submission, job) {
     const [workerName, jobId, extraNonce2, nTime, nonce] = submission.params;
 
     // Rebuild coinbase
@@ -85,4 +85,4 @@ async function submitWork(submission, job) {
 
 
 
-module.exports = { getJob, submitWork };
+module.exports = { getJob, submitJob };

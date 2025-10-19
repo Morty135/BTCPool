@@ -4,7 +4,6 @@ const { getJob, submitJob } = require("./job");
 const database = require("./database");
 const helperFunctions = require("./helperFunctions");
 const fs = require("fs");
-const { Session } = require('inspector');
 
 const sessions = database.sessions;
 const socketSessions = new WeakMap();
