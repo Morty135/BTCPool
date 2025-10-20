@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { getBlockTemplate, submitBlock } = require("./daemon");
 const { buildCoinbaseTx } = require("./coinbase");
+const fs = require("fs");
 
 function swapHexEndian(hex) {
     return hex.match(/../g).reverse().join("");
@@ -9,15 +10,22 @@ function swapHexEndian(hex) {
 function buildStratumJob(template, payoutAddress) {
     const jobId = Date.now().toString();
     const prevHashLE = swapHexEndian(template.previousblockhash);
+
+    // Build full coinbase transaction
     const coinbaseTx = buildCoinbaseTx(template, payoutAddress);
 
-    //coinbase needs to be split for more efficient network usage
-    //https://slushpool.com/help/manual/stratum-protocol/#mining_notify
-    const coinb1 = coinbaseTx;
-    const coinb2 = "";
+    // Temporary coinbase split (miners insert extranonce between coinb1 and coinb2)
+    const coinb1 = coinbaseTx.slice(0, 100);
+    const coinb2 = coinbaseTx.slice(100);
 
     const merkleBranches = template.transactions.map(tx => tx.txid);
 
+    // Convert and pad fields
+    const version = swapHexEndian(template.version.toString(16).padStart(8, "0"));
+    const bits = template.bits.padStart(8, "0");
+    const ntime = template.curtime.toString(16).padStart(8, "0");
+
+    // Return the Stratum mining.notify job
     return {
         id: null,
         method: "mining.notify",
@@ -27,9 +35,9 @@ function buildStratumJob(template, payoutAddress) {
             coinb1,
             coinb2,
             merkleBranches,
-            template.version.toString(16),
-            template.bits,
-            template.curtime.toString(16),
+            version,
+            bits,
+            ntime,
             true
         ]
     };
