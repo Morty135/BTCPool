@@ -1,11 +1,10 @@
 require('dotenv').config();
 const { getBlockTemplate, submitBlock } = require("./daemon");
 const { buildCoinbaseTx } = require("./coinbase");
-const fs = require("fs");
+const { encodeVarInt, swapHexEndian } = require("./helperFunctions");
+const bitcoin = require("bitcoinjs-lib");
 
-function swapHexEndian(hex) {
-    return hex.match(/../g).reverse().join("");
-}
+
 
 function buildStratumJob(template, payoutAddress) {
     const jobId = Date.now().toString();
@@ -53,42 +52,45 @@ async function getJob() {
 async function submitJob(submission, job) {
     const [workerName, jobId, extraNonce2, nTime, nonce] = submission.params;
 
-    // Rebuild coinbase
+    console.log(submission, job );
+
+    //Rebuild coinbase transaction
     const coinbaseHex = job.params[2] + extraNonce2 + job.params[3];
     const coinbaseTx = Buffer.from(coinbaseHex, "hex");
 
-    // Compute merkle root
-    let tree = [bitcoin.crypto.hash256(coinbaseTx)];
-    const txHashes = job.params[4].map(h => Buffer.from(h, "hex"));
-    tree = tree.concat(txHashes);
-
-    while (tree.length > 1) {
-        const next = [];
-        for (let i = 0; i < tree.length; i += 2) {
-            const left = tree[i];
-            const right = tree[i+1] || tree[i];
-            next.push(bitcoin.crypto.hash256(Buffer.concat([left, right])));
-        }
-        tree = next;
+    //Compute merkle root properly
+    let merkle = bitcoin.crypto.hash256(coinbaseTx);
+    for (const branch of job.params[4]) {
+        const branchBuf = Buffer.from(branch, "hex").reverse(); // convert to LE
+        merkle = bitcoin.crypto.hash256(Buffer.concat([merkle, branchBuf]));
     }
-    const merkleRoot = tree[0].toString("hex");
+    const merkleRootLE = merkle.reverse(); // final root LE for header
 
-    // Build block header
+    //Build block header
+    const version = Buffer.from(job.params[5], "hex"); // version (BE)
+    const prevHashLE = Buffer.from(job.params[1], "hex").reverse();
+    const nTimeLE = Buffer.from(nTime, "hex").reverse();
+    const bits = Buffer.from(job.params[6], "hex");
+    const nonceLE = Buffer.from(nonce, "hex").reverse();
+
     const header = Buffer.concat([
-        Buffer.from(job.params[5], "hex"),   // version
-        Buffer.from(job.params[1], "hex"),   // prevBlock
-        Buffer.from(merkleRoot, "hex"),      // merkleRoot
-        Buffer.from(nTime, "hex"),           // nTime
-        Buffer.from(job.params[6], "hex"),   // bits
-        Buffer.from(nonce, "hex")            // nonce
+        version,
+        prevHashLE,
+        merkleRootLE,
+        nTimeLE,
+        bits,
+        nonceLE
     ]);
 
-    // Build full block (header + coinbase)
-    const blockHex = Buffer.concat([header, coinbaseTx]).toString("hex");
+    //Add transactions
+    const txCount = job.params[4].length + 1; // coinbase + others
+    const varintCount = encodeVarInt(txCount);
+    const txs = [coinbaseTx, ...job.params[4].map(tx => Buffer.from(tx, "hex"))];
 
-    // Submit to node
-    const success = await submitBlock(blockHex);
-    return success ? blockHex : null;
+    const block = Buffer.concat([header, varintCount, ...txs]);
+    console.log(block);
+    const blockHex = block.toString("hex");
+    submitBlock(blockHex);
 }
 
 

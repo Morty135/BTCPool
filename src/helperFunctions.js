@@ -12,13 +12,34 @@ function isJSON(str) {
 // session ID is also used as extranonce1 it is a valid 4 byte hex it auutomatically rolls over 
 // after 2^32
 function generateSessionId() {
-  if (typeof sessionCounter !== "number" || !Number.isFinite(sessionCounter)) {
-    sessionCounter = 0;
-  }
+    if (typeof sessionCounter !== "number" || !Number.isFinite(sessionCounter)) {
+        sessionCounter = 0;
+    }
 
-  const id = sessionCounter.toString(16).padStart(8, "0");
-  sessionCounter = (sessionCounter + 1) & 0xffffffff;
-  return id;
+    const id = sessionCounter.toString(16).padStart(8, "0");
+    sessionCounter = (sessionCounter + 1) & 0xffffffff;
+    return id;
 }
 
-module.exports = { isJSON, generateSessionId };
+//varint encoding for Bitcoin protocol
+function encodeVarInt(n) {
+    if (n < 0xfd) return Buffer.from([n]);
+    if (n <= 0xffff) return Buffer.concat([Buffer.from([0xfd]), Buffer.from([n & 0xff, n >> 8])]);
+    if (n <= 0xffffffff)
+        return Buffer.concat([
+        Buffer.from([0xfe]),
+        Buffer.from([
+            n & 0xff,helperencodeVarInt
+            (n >> 8) & 0xff,
+            (n >> 16) & 0xff,
+            (n >> 24) & 0xff
+        ])
+        ]);
+    throw new Error("varint too large");
+}
+
+function swapHexEndian(hex) {
+    return hex.match(/../g).reverse().join("");
+}
+
+module.exports = { isJSON, generateSessionId, encodeVarInt, swapHexEndian };

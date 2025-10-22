@@ -136,8 +136,16 @@ async function handleMessage(message, socket)
             };
             s.submissions.push(submission);
 
-
             console.log('Stored submission for later reconstruction:', submission);
+
+            const valid = await submitJob(submission, s.lastJob);
+
+            const submitResponse = {
+                id: message.id,
+                result: valid,
+                error: valid ? null : { code: 23, message: "Invalid share" }
+            };
+            sendMessage(submitResponse, socket);
         break;
 
         default:
