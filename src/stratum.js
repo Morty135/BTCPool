@@ -136,7 +136,7 @@ async function handleMessage(message, socket)
             };
             s.submissions.push(submission);
 
-            console.log('Stored submission for later reconstruction:', submission);
+            console.log("miner: " + sid + " submitted a share");
 
             const valid = await submitJob(submission, s.lastJob);
 

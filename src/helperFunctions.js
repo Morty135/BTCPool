@@ -1,4 +1,4 @@
-let nextExtranonce = 0;
+const bitcoin = require("bitcoinjs-lib");
 
 function isJSON(str) {
     try {
@@ -50,4 +50,20 @@ function swapHexEndian(hex) {
     return hex.match(/../g).reverse().join("");
 }
 
-module.exports = { isJSON, generateSessionId, encodeVarInt, swapHexEndian };
+function buildMerkleRoot(txHashes) {
+    if (txHashes.length === 0) return Buffer.alloc(32, 0);
+
+    while (txHashes.length > 1) {
+        const nextLevel = [];
+        for (let i = 0; i < txHashes.length; i += 2) {
+            const left = txHashes[i];
+            const right = txHashes[i + 1] || left;
+            const hash = bitcoin.crypto.hash256(Buffer.concat([left, right]));
+            nextLevel.push(hash);
+        }
+        txHashes = nextLevel;
+    }
+    return txHashes[0];
+}
+
+module.exports = { isJSON, generateSessionId, encodeVarInt, swapHexEndian, buildMerkleRoot };

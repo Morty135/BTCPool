@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { getBlockTemplate, submitBlock, getBestBlockHash } = require("./daemon");
 const { buildCoinbaseTx } = require("./coinbase");
-const { encodeVarInt, swapHexEndian } = require("./helperFunctions");
+const { encodeVarInt, swapHexEndian, buildMerkleRoot } = require("./helperFunctions");
 const bitcoin = require("bitcoinjs-lib");
 
 const jobCache = new Map(); // jobId -> full data for block submission
@@ -78,36 +78,27 @@ async function submitJob(submission) {
     const coinbaseTx = Buffer.from(coinbaseHex, "hex");
 
     // 2. Compute the merkle root
-    let merkle = bitcoin.crypto.hash256(coinbaseTx);
-    for (const branch of txids) {
-        const branchBuf = Buffer.from(branch, "hex");
-        merkle = bitcoin.crypto.hash256(Buffer.concat([merkle, branchBuf]));
-    }
-    const merkleRootLE = Buffer.from(merkle).reverse();
+    const coinbaseHash = bitcoin.crypto.hash256(coinbaseTx);
+    const allHashes = [coinbaseHash, ...txids.map(h => Buffer.from(h, "hex"))];
+    const merkleRoot = buildMerkleRoot(allHashes);
+    const merkleRootLE = Buffer.from(merkleRoot).reverse();
 
     // 3. Build the block header
-    const versionBuf = Buffer.from(version, "hex");
-    const prevHashLE = Buffer.from(prevHash, "hex").reverse();
-    const nTimeLE = Buffer.from(nTime, "hex").reverse();
-    const bitsBuf = Buffer.from(bits, "hex");
-    const nonceLE = Buffer.from(nonce, "hex").reverse();
-
     const header = Buffer.concat([
-        versionBuf,
-        prevHashLE,
+        Buffer.from(version, "hex"),
+        Buffer.from(prevHash, "hex").reverse(),
         merkleRootLE,
-        nTimeLE,
-        bitsBuf,
-        nonceLE
+        Buffer.from(nTime, "hex").reverse(),
+        Buffer.from(bits, "hex").reverse(),
+        Buffer.from(nonce, "hex").reverse()
     ]);
 
     // 4. Add all transactions
     const txCount = fullTxData.length + 1;
     const varintCount = encodeVarInt(txCount);
-    console.log("varint: " + varintCount.toString("hex"));
     const txs = [coinbaseTx, ...fullTxData.map(tx => Buffer.from(tx, "hex"))];
 
-    console.log("prevhash", prevHash);
+    console.log("header: ", header.toString("hex"));
     console.log("current best", await getBestBlockHash());
     console.log("merkleroot", merkleRootLE.toString("hex"));
 
