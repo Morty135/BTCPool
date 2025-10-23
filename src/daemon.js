@@ -53,4 +53,30 @@ async function submitBlock(blockHex) {
     }
 }
 
-module.exports = { getBlockTemplate, submitBlock };
+
+
+async function getBestBlockHash() {
+    try {
+        const res = await axios.post(
+            `http://${rpcHost}:${rpcPort}/`,
+            {
+                jsonrpc: "1.0",
+                id: "pool",
+                method: "getbestblockhash",
+                params: []
+            },
+            {
+                auth: { username: rpcUser, password: rpcPassword },
+                headers: { "Content-Type": "text/plain" },
+            }
+        );
+        return res.data.result;
+    } catch (err) {
+        console.error("RPC getbestblockhash error:", err.response?.data || err.message);
+        return null;
+    }
+}
+
+
+
+module.exports = { getBlockTemplate, submitBlock, getBestBlockHash };

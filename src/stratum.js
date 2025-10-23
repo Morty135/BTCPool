@@ -88,7 +88,7 @@ async function handleMessage(message, socket)
 
             sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
 
-            const job = await getJob();
+            const job = await getJob(sessions.get(sessionId));
             session.lastJob = job;
             sendMessage(job, socket);
         break;

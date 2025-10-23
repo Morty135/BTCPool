@@ -24,17 +24,25 @@ function generateSessionId() {
 //varint encoding for Bitcoin protocol
 function encodeVarInt(n) {
     if (n < 0xfd) return Buffer.from([n]);
-    if (n <= 0xffff) return Buffer.concat([Buffer.from([0xfd]), Buffer.from([n & 0xff, n >> 8])]);
-    if (n <= 0xffffffff)
-        return Buffer.concat([
-        Buffer.from([0xfe]),
-        Buffer.from([
-            n & 0xff,helperencodeVarInt
+
+    if (n <= 0xffff) {
+        return Buffer.from([
+            0xfd,
+            n & 0xff,
+            (n >> 8) & 0xff
+        ]);
+    }
+
+    if (n <= 0xffffffff) {
+        return Buffer.from([
+            0xfe,
+            n & 0xff,
             (n >> 8) & 0xff,
             (n >> 16) & 0xff,
             (n >> 24) & 0xff
-        ])
         ]);
+    }
+
     throw new Error("varint too large");
 }
 

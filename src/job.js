@@ -1,8 +1,10 @@
 require('dotenv').config();
-const { getBlockTemplate, submitBlock } = require("./daemon");
+const { getBlockTemplate, submitBlock, getBestBlockHash } = require("./daemon");
 const { buildCoinbaseTx } = require("./coinbase");
 const { encodeVarInt, swapHexEndian } = require("./helperFunctions");
 const bitcoin = require("bitcoinjs-lib");
+
+const jobCache = new Map(); // jobId -> full data for block submission
 
 
 
@@ -24,6 +26,16 @@ function buildStratumJob(template, payoutAddress) {
     const bits = template.bits.padStart(8, "0");
     const ntime = template.curtime.toString(16).padStart(8, "0");
 
+    // caches the full tx data for later use during submission
+    jobCache.set(jobId, {
+        prevHash: template.previousblockhash,
+        version: version,
+        bits: bits,
+        coinb1,
+        coinb2,
+        txids: template.transactions.map(tx => tx.txid),
+        fullTxData: template.transactions.map(tx => tx.data)
+    });
     // Return the Stratum mining.notify job
     return {
         id: null,
@@ -49,48 +61,66 @@ async function getJob() {
 
 
 
-async function submitJob(submission, job) {
+async function submitJob(submission) {
     const [workerName, jobId, extraNonce2, nTime, nonce] = submission.params;
 
-    console.log(submission, job );
+    // Load the original template data you cached when creating the job
+    const job = jobCache.get(jobId);
+    if (!job) {
+        console.error("Unknown jobId:", jobId);
+        return;
+    }
 
-    //Rebuild coinbase transaction
-    const coinbaseHex = job.params[2] + extraNonce2 + job.params[3];
+    const { prevHash, version, bits, coinb1, coinb2, txids, fullTxData } = job;
+
+    // 1. Rebuild the coinbase transaction
+    const coinbaseHex = coinb1 + extraNonce2 + coinb2;
     const coinbaseTx = Buffer.from(coinbaseHex, "hex");
 
-    //Compute merkle root properly
+    // 2. Compute the merkle root
     let merkle = bitcoin.crypto.hash256(coinbaseTx);
-    for (const branch of job.params[4]) {
-        const branchBuf = Buffer.from(branch, "hex").reverse(); // convert to LE
+    for (const branch of txids) {
+        const branchBuf = Buffer.from(branch, "hex");
         merkle = bitcoin.crypto.hash256(Buffer.concat([merkle, branchBuf]));
     }
-    const merkleRootLE = merkle.reverse(); // final root LE for header
+    const merkleRootLE = Buffer.from(merkle).reverse();
 
-    //Build block header
-    const version = Buffer.from(job.params[5], "hex"); // version (BE)
-    const prevHashLE = Buffer.from(job.params[1], "hex").reverse();
+    // 3. Build the block header
+    const versionBuf = Buffer.from(version, "hex");
+    const prevHashLE = Buffer.from(prevHash, "hex").reverse();
     const nTimeLE = Buffer.from(nTime, "hex").reverse();
-    const bits = Buffer.from(job.params[6], "hex");
+    const bitsBuf = Buffer.from(bits, "hex");
     const nonceLE = Buffer.from(nonce, "hex").reverse();
 
     const header = Buffer.concat([
-        version,
+        versionBuf,
         prevHashLE,
         merkleRootLE,
         nTimeLE,
-        bits,
+        bitsBuf,
         nonceLE
     ]);
 
-    //Add transactions
-    const txCount = job.params[4].length + 1; // coinbase + others
+    // 4. Add all transactions
+    const txCount = fullTxData.length + 1;
     const varintCount = encodeVarInt(txCount);
-    const txs = [coinbaseTx, ...job.params[4].map(tx => Buffer.from(tx, "hex"))];
+    console.log("varint: " + varintCount.toString("hex"));
+    const txs = [coinbaseTx, ...fullTxData.map(tx => Buffer.from(tx, "hex"))];
+
+    console.log("prevhash", prevHash);
+    console.log("current best", await getBestBlockHash());
+    console.log("merkleroot", merkleRootLE.toString("hex"));
 
     const block = Buffer.concat([header, varintCount, ...txs]);
-    console.log(block);
     const blockHex = block.toString("hex");
-    submitBlock(blockHex);
+
+    // 5. Submit the block
+    try {
+        await submitBlock(blockHex);
+        console.log(`Submitted block ${jobId}: ${blockHex.length} bytes`);
+    } catch (err) {
+        console.error("RPC submission error:", err.message || err);
+    }
 }
 
 
