@@ -8,12 +8,15 @@ const jobCache = new Map(); // jobId -> full data for block submission
 
 
 
-function buildStratumJob(template, payoutAddress) {
+async function getJob() 
+{
+    const template = await getBlockTemplate();
+
     const jobId = Date.now().toString();
     const prevHashLE = swapHexEndian(template.previousblockhash);
 
     // Build full coinbase transaction
-    const coinbaseTx = buildCoinbaseTx(template, payoutAddress);
+    const coinbaseTx = buildCoinbaseTx(template, process.env.POOL_ADDRESS);
 
     // Temporary coinbase split (miners insert extranonce between coinb1 and coinb2)
     const coinb1 = coinbaseTx.slice(0, 100);
@@ -37,7 +40,7 @@ function buildStratumJob(template, payoutAddress) {
         fullTxData: template.transactions.map(tx => tx.data)
     });
     // Return the Stratum mining.notify job
-    return {
+    job = {
         id: null,
         method: "mining.notify",
         params: [
@@ -52,11 +55,9 @@ function buildStratumJob(template, payoutAddress) {
             true
         ]
     };
-}
+    console.log("Generated new job:", job);
 
-async function getJob() {
-    const template = await getBlockTemplate();
-    return buildStratumJob(template, process.env.POOL_ADDRESS);
+    return job;
 }
 
 
