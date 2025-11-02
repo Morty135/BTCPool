@@ -4,6 +4,7 @@ const { getJob, submitJob } = require("./job");
 const database = require("./database");
 const helperFunctions = require("./helperFunctions");
 const fs = require("fs");
+const { getBestBlockHash } = require("./daemon");
 
 const sessions = database.sessions;
 const socketSessions = new WeakMap();
@@ -77,7 +78,7 @@ async function handleMessage(message, socket)
             const session = {
                 id: sessionId,
                 createdAt: Date.now(),
-                socketRef: true,
+                socketRef: socket,
                 authorized: false,
                 username: null,
                 lastJob: null,
@@ -88,7 +89,7 @@ async function handleMessage(message, socket)
 
             sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
 
-            const job = await getJob(sessions.get(sessionId));
+            const job = await getJob();
             session.lastJob = job;
             sendMessage(job, socket);
         break;
@@ -162,3 +163,32 @@ function sendMessage(message, socket)
     fs.appendFileSync('./pool.log', message);
     socket.write(message);
 }
+
+
+
+async function updateJobs()
+{
+    let currentHeight = await getBestBlockHash();
+    currentHeight = helperFunctions.swapHexEndian(currentHeight);
+
+    // optional: keep a static copy of last height to skip pointless loops
+    if (updateJobs.lastHeight === currentHeight) {
+        console.log("No new blocks, skipping update.");
+    } else {
+        console.log("New tip detected, updating all miners...");
+        updateJobs.lastHeight = currentHeight;
+
+        const job = await getJob(); // build once, reuse
+
+        for (const [sid, session] of sessions) {
+            const socket = session.socketRef;
+            if (!socket || socket.destroyed) continue;
+
+            session.lastJob = job;
+            sendMessage(job, socket);
+        }
+    }
+    
+    setTimeout(updateJobs, 5000);
+}
+updateJobs();

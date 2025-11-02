@@ -37,8 +37,7 @@ async function getJob() {
     for (const t of template.transactions) txs.push(bitcoin.Transaction.fromHex(t.data));
     block.transactions = txs;
 
-    // compute merkle branches using library
-    const merkleRoot = bitcoin.Block.calculateMerkleRoot(block.transactions);
+    // compute merkle branches
     const merkleBranches = template.transactions.map(tx => tx.txid);
 
     // store what you’ll need for submission
@@ -77,10 +76,6 @@ async function getJob() {
 async function submitJob(submission) {
     const [workerName, jobId, extraNonce2, nTime, nonce] = submission.params;
     const job = jobCache.get(jobId);
-    if (!job) {
-        console.error("Unknown jobId:", jobId);
-        return;
-    }
 
     const { template, coinb1, coinb2, fullTxData } = job;
 
@@ -122,10 +117,6 @@ async function submitJob(submission) {
     console.log("merkleroot:", merkleRoot.toString("hex"));
     console.log("template prev:", template.previousblockhash);
     console.log("current best:", await getBestBlockHash());
-
-    const fs = require("fs");
-    fs.writeFileSync("coinbase.hex", coinbaseHex);
-
 
     try {
         await submitBlock(blockHex);
