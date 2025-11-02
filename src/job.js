@@ -8,39 +8,54 @@ const jobCache = new Map(); // jobId -> full data for block submission
 
 
 
-async function getJob() 
-{
+async function getJob() {
     const template = await getBlockTemplate();
-
     const jobId = Date.now().toString();
-    const prevHashLE = swapHexEndian(template.previousblockhash);
 
-    // Build full coinbase transaction
-    const coinbaseTx = buildCoinbaseTx(template, process.env.POOL_ADDRESS);
+    // Build coinbase with a unique placeholder for extranonce
+    const extraNonceSize = 8;
+    const coinbaseTx = buildCoinbaseTx(template, process.env.POOL_ADDRESS, extraNonceSize);
 
-    // Temporary coinbase split (miners insert extranonce between coinb1 and coinb2)
-    const coinb1 = coinbaseTx.slice(0, 100);
-    const coinb2 = coinbaseTx.slice(100);
+    // then after build
+    const extraNonceHex = '00'.repeat(extraNonceSize);
+    const placeholderIndex = coinbaseTx.indexOf(extraNonceHex);
+    if (placeholderIndex === -1)
+        throw new Error("Extranonce placeholder not found in coinbase");
 
+    const coinb1 = coinbaseTx.slice(0, placeholderIndex);
+    const coinb2 = coinbaseTx.slice(placeholderIndex + extraNonceHex.length);
+
+    // build the block with bitcoinjs-lib
+    const block = new bitcoin.Block();
+    block.version = template.version;
+    block.prevHash = Buffer.from(template.previousblockhash, "hex").reverse();
+    block.timestamp = template.curtime;
+    block.bits = parseInt(template.bits, 16);
+    block.nonce = 0;
+
+    const txs = [bitcoin.Transaction.fromHex(coinbaseTx)];
+    for (const t of template.transactions) txs.push(bitcoin.Transaction.fromHex(t.data));
+    block.transactions = txs;
+
+    // compute merkle branches using library
+    const merkleRoot = bitcoin.Block.calculateMerkleRoot(block.transactions);
     const merkleBranches = template.transactions.map(tx => tx.txid);
 
-    // Convert and pad fields
-    const version = swapHexEndian(template.version.toString(16).padStart(8, "0"));
-    const bits = template.bits.padStart(8, "0");
-    const ntime = template.curtime.toString(16).padStart(8, "0");
-
-    // caches the full tx data for later use during submission
+    // store what you’ll need for submission
     jobCache.set(jobId, {
-        prevHash: template.previousblockhash,
-        version: version,
-        bits: bits,
+        template,
         coinb1,
         coinb2,
-        txids: template.transactions.map(tx => tx.txid),
         fullTxData: template.transactions.map(tx => tx.data)
     });
-    // Return the Stratum mining.notify job
-    job = {
+
+    // build stratum notify params
+    const prevHashLE = Buffer.from(template.previousblockhash, "hex").reverse().toString("hex");
+    const versionHex = template.version.toString(16).padStart(8, "0");
+    const bitsHex = template.bits.padStart(8, "0");
+    const ntimeHex = template.curtime.toString(16).padStart(8, "0");
+
+    return {
         id: null,
         method: "mining.notify",
         params: [
@@ -49,67 +64,72 @@ async function getJob()
             coinb1,
             coinb2,
             merkleBranches,
-            version,
-            bits,
-            ntime,
+            versionHex,
+            bitsHex,
+            ntimeHex,
             true
         ]
     };
-    console.log("Generated new job:", job);
-
-    return job;
 }
 
 
 
 async function submitJob(submission) {
     const [workerName, jobId, extraNonce2, nTime, nonce] = submission.params;
-
-    // Load the original template data you cached when creating the job
     const job = jobCache.get(jobId);
     if (!job) {
         console.error("Unknown jobId:", jobId);
         return;
     }
 
-    const { prevHash, version, bits, coinb1, coinb2, txids, fullTxData } = job;
+    const { template, coinb1, coinb2, fullTxData } = job;
 
-    // 1. Rebuild the coinbase transaction
-    const coinbaseHex = coinb1 + extraNonce2 + coinb2;
+    // --- rebuild coinbase ---
+    const extraNonce2Fixed = extraNonce2.padStart(16, "0"); 
+    const coinbaseHex = coinb1 + extraNonce2Fixed + coinb2;
     const coinbaseTx = Buffer.from(coinbaseHex, "hex");
 
-    // 2. Compute the merkle root
+    // --- compute merkle root manually ---
     const coinbaseHash = bitcoin.crypto.hash256(coinbaseTx);
-    const allHashes = [coinbaseHash, ...txids.map(h => Buffer.from(h, "hex"))];
-    const merkleRoot = buildMerkleRoot(allHashes);
-    const merkleRootLE = Buffer.from(merkleRoot).reverse();
+    const txHashes = template.transactions.map(tx => Buffer.from(tx.txid, "hex").reverse());
+    const merkleRoot = buildMerkleRoot([coinbaseHash, ...txHashes]); // returns LE buffer
 
-    // 3. Build the block header
+    // --- build block header manually ---
+    const versionLE = Buffer.alloc(4);
+    versionLE.writeInt32LE(template.version);
+    const prevHashLE = Buffer.from(template.previousblockhash, "hex").reverse();
+    const nTimeLE = Buffer.from(nTime, "hex").reverse();
+    const bitsLE = Buffer.from(template.bits, "hex");
+    const nonceLE = Buffer.from(nonce, "hex").reverse();
+
     const header = Buffer.concat([
-        Buffer.from(version, "hex"),
-        Buffer.from(prevHash, "hex").reverse(),
-        merkleRootLE,
-        Buffer.from(nTime, "hex").reverse(),
-        Buffer.from(bits, "hex").reverse(),
-        Buffer.from(nonce, "hex").reverse()
+        versionLE,
+        prevHashLE,
+        merkleRoot,
+        nTimeLE,
+        bitsLE,
+        nonceLE
     ]);
 
-    // 4. Add all transactions
+    // --- concatenate transactions (coinbase + all template txs) ---
     const txCount = fullTxData.length + 1;
     const varintCount = encodeVarInt(txCount);
     const txs = [coinbaseTx, ...fullTxData.map(tx => Buffer.from(tx, "hex"))];
-
-    console.log("header: ", header.toString("hex"));
-    console.log("current best", await getBestBlockHash());
-    console.log("merkleroot", merkleRootLE.toString("hex"));
-
     const block = Buffer.concat([header, varintCount, ...txs]);
     const blockHex = block.toString("hex");
 
-    // 5. Submit the block
+    console.log("header:", header.toString("hex"));
+    console.log("merkleroot:", merkleRoot.toString("hex"));
+    console.log("template prev:", template.previousblockhash);
+    console.log("current best:", await getBestBlockHash());
+
+    const fs = require("fs");
+    fs.writeFileSync("coinbase.hex", coinbaseHex);
+
+
     try {
         await submitBlock(blockHex);
-        console.log(`Submitted block ${jobId}: ${blockHex.length} bytes`);
+        console.log(`Submitted block ${jobId}: ${blockHex.length / 2} bytes`);
     } catch (err) {
         console.error("RPC submission error:", err.message || err);
     }

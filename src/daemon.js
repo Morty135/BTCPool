@@ -25,30 +25,36 @@ async function getBlockTemplate() {
 }
 
 async function submitBlock(blockHex) {
+    const payload = JSON.stringify({
+        jsonrpc: "1.0",
+        id: "submitblock",
+        method: "submitblock",
+        params: [blockHex],
+    });
+
     try {
         const res = await axios.post(
             `http://${rpcHost}:${rpcPort}/`,
-            {
-                jsonrpc: "1.0",
-                id: "submitblock",
-                method: "submitblock",
-                params: [blockHex],
-            },
+            payload,
             {
                 auth: { username: rpcUser, password: rpcPassword },
-                headers: { "Content-Type": "text/plain" },
+                headers: { "Content-Type": "application/json" },
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+                timeout: 0
             }
         );
 
         if (res.data.error) {
             console.error("Node rejected block:", res.data.error);
             return false;
-        } else {
-            console.log("Block submitted successfully:", res.data.result);
-            return true;
         }
+
+        console.log("Block submitted successfully:", res.data.result);
+        return true;
+
     } catch (err) {
-        console.error("RPC submission error:", err.message);
+        console.error("RPC submission error:", err.response?.data || err.message);
         return false;
     }
 }
