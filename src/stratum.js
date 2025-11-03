@@ -149,8 +149,21 @@ async function handleMessage(message, socket)
             sendMessage(submitResponse, socket);
         break;
 
+        case 'mining.configure':
+            sendMessage({
+                id: message.id,
+                result: { "version-rolling": false },
+                error: null
+            }, socket);
+        break;
+
         default:
             console.log("unknown method: ", message.method);
+            sendMessage({
+                id: message.id || null,
+                result: null,
+                error: { code: -32601, message: "Method not found" }
+            }, socket);
         return;
     }
 }
@@ -168,7 +181,15 @@ function sendMessage(message, socket)
 
 async function updateJobs()
 {
-    let currentHeight = await getBestBlockHash();
+    var currentHeight;
+    try {
+        currentHeight = await getBestBlockHash();
+    }
+    catch (error) 
+    {
+        console.error("Error fetching best block hash:", error);
+        return;
+    }
     currentHeight = helperFunctions.swapHexEndian(currentHeight);
 
     // keep a static copy of last height to skip pointless loops
