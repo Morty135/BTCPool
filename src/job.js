@@ -13,17 +13,15 @@ async function getJob() {
     const jobId = Date.now().toString();
 
     // Build coinbase with a unique placeholder for extranonce
-    const extraNonceSize = 8;
-    const coinbaseTx = buildCoinbaseTx(template, process.env.POOL_ADDRESS, extraNonceSize);
+    const extraNonceMarker = 'ffffffffffffffff';
+    const coinbaseTx = buildCoinbaseTx(template, process.env.POOL_ADDRESS, extraNonceMarker);
 
-    // then after build
-    const extraNonceHex = '00'.repeat(extraNonceSize);
-    const placeholderIndex = coinbaseTx.indexOf(extraNonceHex);
+    const placeholderIndex = coinbaseTx.indexOf(extraNonceMarker);
     if (placeholderIndex === -1)
-        throw new Error("Extranonce placeholder not found in coinbase");
+    throw new Error("Extranonce marker not found in coinbase");
 
     const coinb1 = coinbaseTx.slice(0, placeholderIndex);
-    const coinb2 = coinbaseTx.slice(placeholderIndex + extraNonceHex.length);
+    const coinb2 = coinbaseTx.slice(placeholderIndex + extraNonceMarker.length);
 
     // build the block with bitcoinjs-lib
     const block = new bitcoin.Block();
@@ -117,6 +115,7 @@ async function submitJob(submission) {
     console.log("merkleroot:", merkleRoot.toString("hex"));
     console.log("template prev:", template.previousblockhash);
     console.log("current best:", await getBestBlockHash());
+    console.log(coinbaseHex.toString("hex"));
 
     try {
         await submitBlock(blockHex);

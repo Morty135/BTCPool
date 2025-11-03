@@ -16,9 +16,10 @@ function buildCoinbaseTx(template, payoutAddress, extraNoncePlaceholder = 8)
     const heightBuf = encodeHeight(template.height);
     const heightScript = Buffer.concat([Buffer.from([heightBuf.length]), heightBuf]);
 
-    // Add extranonce placeholder and optional tag
-    const extranonceBuf = Buffer.alloc(extraNoncePlaceholder, 0);
-    const tagBuf = Buffer.from(process.env.POOL_TAG, "ascii");
+    // --- extranonce placeholder (string or number) ---
+    let extranonceBuf = Buffer.from(extraNoncePlaceholder, "hex");
+
+    const tagBuf = Buffer.from(process.env.POOL_TAG || "", "ascii");
     const tagPush = Buffer.concat([Buffer.from([tagBuf.length]), tagBuf]);
 
     const scriptSig = Buffer.concat([heightScript, extranonceBuf, tagPush]);
