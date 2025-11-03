@@ -12,7 +12,7 @@ async function getJob() {
     const template = await getBlockTemplate();
     const jobId = Date.now().toString();
 
-    // Build coinbase with a unique placeholder for extranonce
+    // --- Build coinbase with a unique placeholder for extranonce ---
     const extraNonceMarker = 'ffffffffffffffff';
     const coinbaseTx = buildCoinbaseTx(template, process.env.POOL_ADDRESS, extraNonceMarker);
 
@@ -23,7 +23,7 @@ async function getJob() {
     const coinb1 = coinbaseTx.slice(0, placeholderIndex);
     const coinb2 = coinbaseTx.slice(placeholderIndex + extraNonceMarker.length);
 
-    // build the block with bitcoinjs-lib
+    // --- build the block with bitcoinjs-lib ---
     const block = new bitcoin.Block();
     block.version = template.version;
     block.prevHash = Buffer.from(template.previousblockhash, "hex").reverse();
@@ -35,10 +35,10 @@ async function getJob() {
     for (const t of template.transactions) txs.push(bitcoin.Transaction.fromHex(t.data));
     block.transactions = txs;
 
-    // compute merkle branches
+    // --- compute merkle branches ---
     const merkleBranches = template.transactions.map(tx => tx.txid);
 
-    // store what you’ll need for submission
+    // --- store what you’ll need for submission ---
     jobCache.set(jobId, {
         template,
         coinb1,
@@ -46,7 +46,7 @@ async function getJob() {
         fullTxData: template.transactions.map(tx => tx.data)
     });
 
-    // build stratum notify params
+    // --- build stratum notify params ---
     const prevHashLE = Buffer.from(template.previousblockhash, "hex").reverse().toString("hex");
     const versionHex = template.version.toString(16).padStart(8, "0");
     const bitsHex = template.bits.padStart(8, "0");
@@ -110,12 +110,6 @@ async function submitJob(submission) {
     const txs = [coinbaseTx, ...fullTxData.map(tx => Buffer.from(tx, "hex"))];
     const block = Buffer.concat([header, varintCount, ...txs]);
     const blockHex = block.toString("hex");
-
-    console.log("header:", header.toString("hex"));
-    console.log("merkleroot:", merkleRoot.toString("hex"));
-    console.log("template prev:", template.previousblockhash);
-    console.log("current best:", await getBestBlockHash());
-    console.log(coinbaseHex.toString("hex"));
 
     try {
         await submitBlock(blockHex);

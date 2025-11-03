@@ -171,18 +171,18 @@ async function updateJobs()
     let currentHeight = await getBestBlockHash();
     currentHeight = helperFunctions.swapHexEndian(currentHeight);
 
-    // optional: keep a static copy of last height to skip pointless loops
+    // keep a static copy of last height to skip pointless loops
     if (updateJobs.lastHeight === currentHeight) {
         console.log("No new blocks, skipping update.");
     } else {
         console.log("New tip detected, updating all miners...");
         updateJobs.lastHeight = currentHeight;
 
-        const job = await getJob(); // build once, reuse
-
         for (const [sid, session] of sessions) {
             const socket = session.socketRef;
             if (!socket || socket.destroyed) continue;
+
+            const job = await getJob();
 
             session.lastJob = job;
             sendMessage(job, socket);

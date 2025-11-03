@@ -1,4 +1,8 @@
-This will be the core component of my mining pool
-I need to fix the job creating and ubmitting functions the math is way off and my brain is melded soup
+The main stratum mining loop is functional.
+To run this get a bitcoin node set the .env using the .env_example
+Setup mongoDB for authentication.
+use nodes RPC and mine away.
+The difficulty is fixed to 1 so if you want to thest with more powerfull miner change it to a higher one.
+CPU test miner included.
 
-bro this is insanity https://learnmeabitcoin.com/technical/block/
+materials for research: https://learnmeabitcoin.com/technical/block/

@@ -12,11 +12,11 @@ function buildCoinbaseTx(template, payoutAddress, extraNoncePlaceholder = 8)
     const network = template.network === "testnet" ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
     const tx = new bitcoin.Transaction();
 
-    // --- 1. Coinbase input ---
+    // --- Coinbase input ---
     const heightBuf = encodeHeight(template.height);
     const heightScript = Buffer.concat([Buffer.from([heightBuf.length]), heightBuf]);
 
-    // --- extranonce placeholder (string or number) ---
+    // --- extranonce placeholder (string) ---
     let extranonceBuf = Buffer.from(extraNoncePlaceholder, "hex");
 
     const tagBuf = Buffer.from(process.env.POOL_TAG || "", "ascii");
@@ -25,11 +25,11 @@ function buildCoinbaseTx(template, payoutAddress, extraNoncePlaceholder = 8)
     const scriptSig = Buffer.concat([heightScript, extranonceBuf, tagPush]);
     tx.addInput(Buffer.alloc(32, 0), 0xffffffff, 0xffffffff, scriptSig);
 
-    // --- 2. Coinbase output (reward) ---
+    // --- Coinbase output (reward) ---
     const p2pkh = bitcoin.address.toOutputScript(payoutAddress, network);
     tx.addOutput(p2pkh, template.coinbasevalue);
 
-    // --- 3. Witness commitment (if segwit block) ---
+    // --- Witness commitment (if segwit block) ---
     if (template.default_witness_commitment) {
         const commitmentScript = Buffer.from(template.default_witness_commitment, "hex");
         tx.addOutput(commitmentScript, 0);
