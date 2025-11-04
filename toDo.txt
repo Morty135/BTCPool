@@ -1,57 +1,16 @@
-Keep track of jobs
-finish the job submit function
-make webui
+const sessions = database.sessions;
+const socketSessions = new WeakMap();
 
-what I get from node:
+replace these stupid two maps with 1 good one 
 
-{
-  "version": 545259520,
-  "previousblockhash": "00000000000000000003f12c57d40a8b0a...",
-  "transactions": [
-    {
-      "data": "02000000000101...",
-      "txid": "8a7f6c8c4b..."
-    }
-  ],
-  "coinbasevalue": 374271712,
-  "curtime": 1760988607,
-  "bits": "170d3b30",
-  "height": 876543
-}
-
-what I want to give the miner:
-
-{
-  "id": null,
-  "method": "mining.notify",
-  "params": [
-    "1760988631735",                // jobId
-    "a00ad4572cf103000000000000...",// prevHashLE
-    "coinb1",                       // first half of coinbase (hex)
-    "coinb2",                       // second half of coinbase (hex)
-    ["8a7f6c8c4b...", ...],         // merkleBranches
-    "20000000",                     // version (LE)
-    "170d3b30",                     // bits
-    "6528d90f",                     // ntime
-    true                            // cleanJobs flag
-  ]
-}
-
-what the miner returns:
-
-{
-  "id": 4,
-  "method": "mining.submit",
-  "params": [
-    "Morty",              // miner username
-    "1760988631735",      // jobId
-    "02000000",           // extranonce2
-    "68f68dce",           // ntime
-    "634ad00e"            // nonce
-  ]
-}
-
-what the node wants back:
-(hashed as sha256d using the header)
-
-version + prevHash + merkleRoot + ntime + bits + nonce
+const session = {
+    id: sessionId,
+    socketRef: socket,
+    authorized: false,
+    username: null,
+    lastJob: null,
+    submissions: [],
+    difficulty: 1,
+    shares: 0,
+    lastAdjust: Date.now()
+};
