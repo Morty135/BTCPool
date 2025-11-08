@@ -6,6 +6,7 @@ mongoose.connect(`mongodb://${process.env.DB_HOST}:${process.env.DB_PORT}/stratu
 .catch(err => console.error('MongoDB error:', err));
 
 const Miner = require('../models/miner');
+const Worker = require('../models/worker');
 
 // local in-memory session store — keep runtime/session data here, not in DB
 const sessions = new Map();
@@ -20,9 +21,13 @@ async function authorizeMiner(message)
         error: 'Unauthorized'
     }
 
+    usernameSplit = username.split('.');
+    const workerName = usernameSplit[1];
+    const minerName = usernameSplit[0];
+
     try 
     {
-        const miner = await Miner.findOne({ username });
+        const miner = await Miner.findOne({ username: minerName });
         if (!miner) 
         {
             response.error = 'Miner not found';
@@ -33,6 +38,17 @@ async function authorizeMiner(message)
         if (!isMatch) {
             response.error = 'Invalid password';
             return response;
+        }
+
+        const worker = await Worker.findOne({ name: workerName });
+        if (!worker) 
+        {
+            Worker.create({ name: workerName, miner: miner._id });
+        }
+        else
+        {
+            worker.lastSeen = Date.now();
+            await worker.save();
         }
 
         response.id = message.id;

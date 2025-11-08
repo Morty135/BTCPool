@@ -81,6 +81,7 @@ async function handleMessage(message, socket)
                 socketRef: socket,
                 authorized: false,
                 username: null,
+                difficulty: 1,
                 lastJob: null,
                 submissions: []
             };

@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const Schema = mongoose.Schema;
+
 const workerSchema = new Schema({
   miner: { type: Schema.Types.ObjectId, ref: "Miner", required: true },
   name: { type: String, required: true },
