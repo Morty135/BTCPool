@@ -72,8 +72,15 @@ async function getJob() {
 
 
 async function submitJob(submission) {
-    const [workerName, jobId, extraNonce2, nTime, nonce] = submission.params;
+    const [username, jobId, extraNonce2, nTime, nonce] = submission.params;
     const job = jobCache.get(jobId);
+
+    console.log(username);
+    console.log(submission);
+    usernameSplit = username.split('.');
+    const workerName = usernameSplit[1];
+    const minerName = usernameSplit[0];
+
 
     const { template, coinb1, coinb2, fullTxData } = job;
 
