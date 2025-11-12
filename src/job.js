@@ -3,6 +3,7 @@ const { getBlockTemplate, submitBlock, getBestBlockHash } = require("./daemon");
 const { buildCoinbaseTx } = require("./coinbase");
 const { encodeVarInt, swapHexEndian, buildMerkleRoot } = require("./helperFunctions");
 const bitcoin = require("bitcoinjs-lib");
+const {validateShare} = require("./validateShare");
 
 const jobCache = new Map(); // jobId -> full data for block submission
 
@@ -75,12 +76,9 @@ async function submitJob(submission) {
     const [username, jobId, extraNonce2, nTime, nonce] = submission.params;
     const job = jobCache.get(jobId);
 
-    console.log(username);
-    console.log(submission);
     usernameSplit = username.split('.');
     const workerName = usernameSplit[1];
     const minerName = usernameSplit[0];
-
 
     const { template, coinb1, coinb2, fullTxData } = job;
 
@@ -110,6 +108,10 @@ async function submitJob(submission) {
         bitsLE,
         nonceLE
     ]);
+
+    const shareValid = validateShare(header, submission.difficulty);
+
+    console.log(`Share valid: ${shareValid}`);
 
     // --- concatenate transactions (coinbase + all template txs) ---
     const txCount = fullTxData.length + 1;

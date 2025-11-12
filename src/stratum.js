@@ -130,17 +130,20 @@ async function handleMessage(message, socket)
                 break;
             }
 
+            console.log(s.difficulty);
+
             const submission = {
                 receivedAt: Date.now(),
                 params: message.params,
                 id: message.id,
-                method: message.method
+                method: message.method,
+                difficulty: s.difficulty
             };
             s.submissions.push(submission);
 
             console.log("miner: " + sid + " submitted a share");
 
-            const valid = await submitJob(submission, s.lastJob);
+            const valid = await submitJob(submission);
 
             const submitResponse = {
                 id: message.id,
