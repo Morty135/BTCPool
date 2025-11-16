@@ -50,20 +50,20 @@ function swapHexEndian(hex) {
     return hex.match(/../g).reverse().join("");
 }
 
-function buildMerkleRoot(txHashes) {
-    if (txHashes.length === 0) return Buffer.alloc(32, 0);
+function buildMerkleFromBranches(coinbaseTx, branchesHex) {
+    let hash = bitcoin.crypto.hash256(coinbaseTx); // BE
 
-    while (txHashes.length > 1) {
-        const nextLevel = [];
-        for (let i = 0; i < txHashes.length; i += 2) {
-            const left = txHashes[i];
-            const right = txHashes[i + 1] || left;
-            const hash = bitcoin.crypto.hash256(Buffer.concat([left, right]));
-            nextLevel.push(hash);
-        }
-        txHashes = nextLevel;
+    for (const branchHex of branchesHex) {
+        const branchBE = Buffer.from(branchHex, "hex");
+        const branchLE = Buffer.from(branchBE).reverse();
+
+        // miner does LE tree hashing
+        const hashLE = Buffer.from(hash).reverse();
+        hash = bitcoin.crypto.hash256(Buffer.concat([hashLE, branchLE]));
     }
-    return txHashes[0];
+
+    // LE merkle root for block header
+    return Buffer.from(hash).reverse();
 }
 
-module.exports = { isJSON, generateSessionId, encodeVarInt, swapHexEndian, buildMerkleRoot };
+module.exports = { isJSON, generateSessionId, encodeVarInt, swapHexEndian, buildMerkleFromBranches };

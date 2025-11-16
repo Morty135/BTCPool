@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-mongoose.connect(`mongodb://${process.env.DB_HOST}:${process.env.DB_PORT}/stratumPool`, {})
+mongoose.connect(process.env.DB_CONNECTION, {})
 .then(() => console.log('✅ MongoDB connected'))
 .catch(err => console.error('MongoDB error:', err));
 

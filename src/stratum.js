@@ -22,8 +22,13 @@ const server = net.createServer((socket) =>
         {
             message = JSON.parse(data.toString('utf8'));
         }
-        logMessage = JSON.stringify(message) + '\n';
-        fs.appendFileSync('./pool.log', logMessage);
+
+        if (process.env.POOL_STRATUM_LOGS == true)
+        {
+            logMessage = JSON.stringify(message) + '\n';
+            fs.appendFileSync('./pool.log', logMessage);
+        }
+
         handleMessage(message, socket);
     });
 
@@ -88,7 +93,7 @@ async function handleMessage(message, socket)
             sessions.set(sessionId, session);
             socketSessions.set(socket, sessionId);
 
-            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [1]}, socket);
+            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [session.difficulty]}, socket);
 
             const job = await getJob();
             session.lastJob = job;
@@ -130,14 +135,13 @@ async function handleMessage(message, socket)
                 break;
             }
 
-            console.log(s.difficulty);
-
             const submission = {
                 receivedAt: Date.now(),
                 params: message.params,
                 id: message.id,
                 method: message.method,
-                difficulty: s.difficulty
+                difficulty: s.difficulty,
+                sid: sid
             };
             s.submissions.push(submission);
 
@@ -177,7 +181,10 @@ async function handleMessage(message, socket)
 function sendMessage(message, socket)
 {
     message = JSON.stringify(message) + '\n';
-    fs.appendFileSync('./pool.log', message);
+    if (process.env.POOL_STRATUM_LOGS == true)
+    {
+        fs.appendFileSync('./pool.log', message);
+    }
     socket.write(message);
 }
 
