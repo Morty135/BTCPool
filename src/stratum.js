@@ -5,9 +5,9 @@ const database = require("./database");
 const helperFunctions = require("./helperFunctions");
 const fs = require("fs");
 const { getBestBlockHash } = require("./daemon");
+const crypto = require("crypto");
 
 const sessions = database.sessions;
-const socketSessions = new WeakMap();
 
 
 
@@ -18,16 +18,14 @@ const server = net.createServer((socket) =>
     socket.on('data', (data) => 
     {
         let message = data;
+        
         if (helperFunctions.isJSON(data)) 
         {
             message = JSON.parse(data.toString('utf8'));
         }
 
-        if (process.env.POOL_STRATUM_LOGS == true)
-        {
-            logMessage = JSON.stringify(message) + '\n';
-            fs.appendFileSync('./pool.log', logMessage);
-        }
+        logMessage = JSON.stringify(message) + '\n';
+        fs.appendFileSync('./pool.log', logMessage);
 
         handleMessage(message, socket);
     });
@@ -35,22 +33,21 @@ const server = net.createServer((socket) =>
     socket.on('end', () => 
     {
         console.log('Miner disconnected');
-        const sid = socketSessions.get(socket);
-        if (sid) {
-            sessions.delete(sid);
-            socketSessions.delete(socket);
-        }
+        sessions.delete(socket.id);
     });
 
     socket.on('error', (err) => 
     {
         console.error('Socket error:', err.message);
-        const sid = socketSessions.get(socket);
-        if (sid) {
-            sessions.delete(sid);
-            socketSessions.delete(socket);
-        }
+        sessions.delete(socket.id);
     });
+});
+
+
+
+server.on("connection", (socket) => {
+    socket.id = crypto.randomBytes(8).toString("hex");
+    console.log("Miner connected:", socket._id);
 });
 
 
@@ -64,75 +61,64 @@ server.listen(process.env.STRATUM_PORT, process.env.STRATUM_HOST, () =>
 
 async function handleMessage(message, socket)
 {
+    let session = sessions.get(socket.id);
+
     switch (message.method) 
     {
-        case 'mining.subscribe':
-            // generate a per-connection session id and return it in the response
-            const sessionId = helperFunctions.generateSessionId();
+        case 'mining.subscribe': {
+
+            const job = await getJob();
+            const extranonce1 = helperFunctions.generateExtranonce1();
+
             sendMessage({
                 id: message.id,
                 result: [
                     [["mining.set_difficulty", "subid1"], ["mining.notify", "subid2"]],
-                    sessionId, // session ID is a valid 4 byte hex so it is also used as extranonce1
+                    extranonce1,
                     4
                 ],
                 error: null
             }, socket);
 
-            // create session entry for later reconstruction
-            const session = {
-                id: sessionId,
+            session = {
                 createdAt: Date.now(),
                 socketRef: socket,
                 authorized: false,
                 username: null,
-                difficulty: 1,
-                lastJob: null,
-                submissions: []
+                difficulty: 0.1,
+                job: job,
+                extranonce1: extranonce1,
             };
-            sessions.set(sessionId, session);
-            socketSessions.set(socket, sessionId);
+
+            sessions.set(socket.id, session);
 
             sendMessage({"id": null, "method": "mining.set_difficulty", "params": [session.difficulty]}, socket);
-
-            const job = await getJob();
-            session.lastJob = job;
             sendMessage(job, socket);
-        break;
+            break;
+        }
 
-        case 'mining.authorize':
-            response = await database.authorizeMiner(message);
+        case 'mining.authorize': {
 
-            if (response && response.result === true) {
-                const sid = socketSessions.get(socket);
-                if (sid) {
-                    const s = sessions.get(sid);
-                    if (s) {
-                        s.authorized = true;
-                        s.username = message.params[0];
-                        s.authorizedAt = Date.now();
-                    }
-                }
+            const response = await database.authorizeMiner(message);
+
+            if (session) {
+                session.authorized = response.result;
+                sessions.set(socket.id, session);
             }
+
             sendMessage(response, socket);
-        break;
+            break;
+        }
 
-        case 'mining.extranonce.subscribe':
-        break;
+        case 'mining.submit': {
 
-        case 'mining.submit':
-            // store submission in the in-memory session for later block reconstruction
-            const sid = socketSessions.get(socket);
-            if (!sid) {
-                console.warn('Received submit without session for socket');
-                console.log(message);
-                break;
-            }
-            const s = sessions.get(sid);
-            if (!s) {
-                console.warn('Session not found for submit:', sid);
-                console.log(message);
-                break;
+            if (!session) {
+                sendMessage({
+                    id: message.id,
+                    result: false,
+                    error: { code: 31, message: "Session not found" }
+                }, socket);
+                return;
             }
 
             const submission = {
@@ -140,30 +126,31 @@ async function handleMessage(message, socket)
                 params: message.params,
                 id: message.id,
                 method: message.method,
-                difficulty: s.difficulty,
-                sid: sid
+                difficulty: session.difficulty,
+                extranonce1: session.extranonce1
             };
-            s.submissions.push(submission);
 
-            console.log("miner: " + sid + " submitted a share");
+            console.log("miner: " + session.socketRef.id + " submitted a share");
 
             const valid = await submitJob(submission);
 
-            const submitResponse = {
+            sendMessage({
                 id: message.id,
                 result: valid,
                 error: valid ? null : { code: 23, message: "Invalid share" }
-            };
-            sendMessage(submitResponse, socket);
-        break;
+            }, socket);
 
-        case 'mining.configure':
+            break;
+        }
+
+        case 'mining.configure': {
             sendMessage({
                 id: message.id,
-                result: { "version-rolling": false },
+                result: { "version-rolling": true },
                 error: null
             }, socket);
-        break;
+            break;
+        }
 
         default:
             console.log("unknown method: ", message.method);
@@ -172,7 +159,7 @@ async function handleMessage(message, socket)
                 result: null,
                 error: { code: -32601, message: "Method not found" }
             }, socket);
-        return;
+            return;
     }
 }
 
@@ -181,10 +168,9 @@ async function handleMessage(message, socket)
 function sendMessage(message, socket)
 {
     message = JSON.stringify(message) + '\n';
-    if (process.env.POOL_STRATUM_LOGS == true)
-    {
-        fs.appendFileSync('./pool.log', message);
-    }
+
+    fs.appendFileSync('./pool.log', message);
+
     socket.write(message);
 }
 
@@ -210,14 +196,13 @@ async function updateJobs()
         console.log("New tip detected, updating all miners...");
         updateJobs.lastHeight = currentHeight;
 
-        for (const [sid, session] of sessions) {
-            const socket = session.socketRef;
-            if (!socket || socket.destroyed) continue;
-
-            const job = await getJob();
-
-            session.lastJob = job;
-            sendMessage(job, socket);
+        for (let i = 0; i < sessions.length; i++) {
+            if(sessions[i].authorized == false){
+                return;
+            }
+            const newJob = await getJob();
+            session.job = newJob;
+            sendMessage(newJob, session.socketRef);
         }
     }
     

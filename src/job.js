@@ -92,7 +92,7 @@ async function submitJob(submission) {
 
     // --- rebuild coinbase ---
     // session.id is extranonce1
-    const extranonce1 = submission.sid;
+    const extranonce1 = submission.extranonce1;
     const extraNonce2Fixed = extraNonce2.padStart(8, "0"); 
 
     if ((extranonce1.length + extraNonce2Fixed.length) !== 16) {

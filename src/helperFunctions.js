@@ -9,16 +9,24 @@ function isJSON(str) {
     }
 }
 
-// session ID is also used as extranonce1 it is a valid 4 byte hex it auutomatically rolls over 
+// extranonce1 it is a valid 4 byte hex it auutomatically rolls over 
 // after 2^32
-function generateSessionId() {
-    if (typeof sessionCounter !== "number" || !Number.isFinite(sessionCounter)) {
-        sessionCounter = 0;
-    }
+let sessionCounter = 0;
 
-    const id = sessionCounter.toString(16).padStart(8, "0");
-    sessionCounter = (sessionCounter + 1) & 0xffffffff;
-    return id;
+function generateExtranonce1() {
+    // 16-bit rolling counter
+    const counterPart = sessionCounter & 0xffff;
+    sessionCounter = (sessionCounter + 1) & 0xffff;
+
+    // 16-bit timestamp (lower bits of Date.now())
+    const ts = Date.now() & 0xffff;
+
+    // pack into 4 bytes: [ts_hi, ts_lo, ctr_hi, ctr_lo]
+    const buf = Buffer.alloc(4);
+    buf.writeUInt16BE(ts, 0);
+    buf.writeUInt16BE(counterPart, 2);
+
+    return buf.toString("hex");
 }
 
 //varint encoding for Bitcoin protocol
@@ -66,4 +74,4 @@ function buildMerkleFromBranches(coinbaseTx, branchesHex) {
     return Buffer.from(hash).reverse();
 }
 
-module.exports = { isJSON, generateSessionId, encodeVarInt, swapHexEndian, buildMerkleFromBranches };
+module.exports = { isJSON, generateExtranonce1, encodeVarInt, swapHexEndian, buildMerkleFromBranches };
