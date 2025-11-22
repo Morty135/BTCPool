@@ -1,61 +1,72 @@
 require('dotenv').config();
 const { getBlockTemplate, submitBlock, getBestBlockHash } = require("./daemon");
 const { buildCoinbaseTx } = require("./coinbase");
-const { encodeVarInt, swapHexEndian, buildMerkleFromBranches } = require("./helperFunctions");
+const { encodeVarInt, swapHexEndian } = require("./helperFunctions");
 const bitcoin = require("bitcoinjs-lib");
 const {validateShare} = require("./validateShare");
 const {dumpBlock} = require("./dumpBlock");
+const merkle = require("./merkle");
 
 const jobCache = new Map(); // jobId -> full data for block submission
 
-
+const fs = require('fs');
 
 async function getJob() {
     const template = await getBlockTemplate();
     const jobId = Date.now().toString();
 
-    // --- Build coinbase with a unique placeholder for extranonce ---
-    const extraNonceMarker = 'ffffffffffffffff';
-    const coinbaseTx = buildCoinbaseTx(template, process.env.POOL_ADDRESS, extraNonceMarker);
+    // --- extranonce setup ---
+    const EX1_LEN = 8;  // 4 bytes = 8 hex chars
+    const EX2_LEN = 8;  // 4 bytes = 8 hex chars
+    const TOTAL_LEN = EX1_LEN + EX2_LEN;
 
-    const placeholderIndex = coinbaseTx.indexOf(extraNonceMarker);
-    if (placeholderIndex === -1)
-    throw new Error("Extranonce marker not found in coinbase");
+    const extraNonceMarker = "ff".repeat(TOTAL_LEN / 2);
 
-    const coinb1 = coinbaseTx.slice(0, placeholderIndex);
-    const coinb2 = coinbaseTx.slice(placeholderIndex + extraNonceMarker.length);
-
-    // --- build the block with bitcoinjs-lib ---
-    const block = new bitcoin.Block();
-    block.version = template.version;
-    block.prevHash = Buffer.from(template.previousblockhash, "hex").reverse();
-    block.timestamp = template.curtime;
-    block.bits = parseInt(template.bits, 16);
-    block.nonce = 0;
-
-    const txs = [bitcoin.Transaction.fromHex(coinbaseTx)];
-    for (const t of template.transactions) txs.push(bitcoin.Transaction.fromHex(t.data));
-    block.transactions = txs;
-
-    // --- compute merkle branches ---
-    const merkleBranches = template.transactions.map(
-        tx => Buffer.from(tx.txid, "hex").reverse().toString("hex")
+    // --- build coinbase ---
+    const coinbaseTx = buildCoinbaseTx(
+        template,
+        process.env.POOL_ADDRESS,
+        extraNonceMarker
     );
 
-    // --- store what you’ll need for submission ---
+    // split coinbase
+    const idx = coinbaseTx.indexOf(extraNonceMarker);
+    if (idx === -1) {
+        throw new Error("Extranonce marker missing in coinbase");
+    }
+
+    const coinb1 = coinbaseTx.slice(0, idx);
+    const coinb2 = coinbaseTx.slice(idx + TOTAL_LEN);
+
+    // --- REAL coinbase hash (LE) ---
+    const cbBuf = Buffer.from(coinbaseTx, "hex");
+    const cbHashBE = bitcoin.crypto.hash256(cbBuf);
+    const cbHashLE = Buffer.from(cbHashBE).reverse();
+
+    // --- REAL merkle branches ---
+    const txidsBE = template.transactions.map(t => t.txid);
+    const merkleBranches = merkle.buildBranches(cbHashLE, txidsBE);
+
+    // --- header fields ---
+    const prevHashLE = Buffer.from(template.previousblockhash, "hex")
+        .reverse()
+        .toString("hex");
+
+    const versionHex = template.version
+        .toString(16)
+        .padStart(8, "0");
+
+    const bitsHex = template.bits.padStart(8, "0");
+    const ntimeHex = template.curtime.toString(16).padStart(8, "0");
+
+    // --- cache for submit ---
     jobCache.set(jobId, {
         template,
         coinb1,
         coinb2,
-        fullTxData: template.transactions.map(tx => tx.data),
-        merkleBranches
+        merkleBranches,
+        fullTxData: template.transactions.map(tx => tx.data)
     });
-
-    // --- build stratum notify params ---
-    const prevHashLE = Buffer.from(template.previousblockhash, "hex").reverse().toString("hex");
-    const versionHex = template.version.toString(16).padStart(8, "0");
-    const bitsHex = template.bits.padStart(8, "0");
-    const ntimeHex = template.curtime.toString(16).padStart(8, "0");
 
     return {
         id: null,
@@ -78,76 +89,82 @@ async function getJob() {
 
 
 
-const validSharesRate = 0;
-
 async function submitJob(submission) {
-    const [username, jobId, extraNonce2, nTime, nonce] = submission.params;
+    const [username, jobId, extraNonce2, nTimeHex, nonceHex] = submission.params;
+
     const job = jobCache.get(jobId);
-
-    usernameSplit = username.split('.');
-    const workerName = usernameSplit[1];
-    const minerName = usernameSplit[0];
-
-    const { template, coinb1, coinb2, fullTxData } = job;
-
-    // --- rebuild coinbase ---
-    // session.id is extranonce1
-    const extranonce1 = submission.extranonce1;
-    const extraNonce2Fixed = extraNonce2.padStart(8, "0"); 
-
-    if ((extranonce1.length + extraNonce2Fixed.length) !== 16) {
-        console.error("Extranonce sizes do not match marker size");
+    if (!job) {
+        console.error("Unknown job ID");
+        return false;
     }
+    console.log("miner diff: " + submission.difficulty);
+    fs.writeFileSync('last_submission.json', JSON.stringify(submission, null, 2));
 
-    const coinbaseHex = coinb1 + extranonce1 + extraNonce2Fixed + coinb2;
-    const coinbaseTx = Buffer.from(coinbaseHex, "hex");
+    const { template, coinb1, coinb2, merkleBranches, fullTxData } = job;
 
-    // buildMerkleRoot must operate on LE hashes and return LE
-    const merkleRoot = buildMerkleFromBranches(coinbaseTx, job.merkleBranches);
+    const extranonce1 = submission.extranonce1.padStart(8, "0");
+    const extranonce2 = extraNonce2.padStart(8, "0");
 
-    console.log(merkleRoot.toString("hex"));
+    const coinbaseHex = coinb1 + extranonce1 + extranonce2 + coinb2;
+    const coinbaseBuf = Buffer.from(coinbaseHex, "hex");
+    console.log("Coinbase:", coinbaseHex);
 
-    // --- build block header manually ---
-    const versionLE = Buffer.alloc(4);
-    versionLE.writeInt32LE(template.version);
+    // coinbase txid
+    const coinbaseHashBE = bitcoin.crypto.hash256(coinbaseBuf);
+    const coinbaseHashLE = Buffer.from(coinbaseHashBE).reverse();
+    console.log("Coinbase TXID LE:", coinbaseHashLE.toString("hex"));
+
+    // merkle root (LE)
+    const merkleRootLE = merkle.buildRootFromBranches(coinbaseHashLE, merkleBranches);
+    console.log("Merkle root LE:", merkleRootLE.toString("hex"));
+
+    // header fields
+    const versionHex = template.version.toString(16).padStart(8, "0");
+    const versionLE = Buffer.from(versionHex.match(/../g).reverse().join(""), "hex");
     const prevHashLE = Buffer.from(template.previousblockhash, "hex").reverse();
-    const nTimeLE = Buffer.from(nTime, "hex").reverse();
-    const bitsLE = Buffer.from(template.bits, "hex").reverse();
-    const nonceLE = Buffer.from(nonce, "hex").reverse();
+
+    const nTime = Buffer.from(nTimeHex, "hex");
+    const bits = Buffer.from(template.bits, "hex");
+    const nonce = Buffer.from(nonceHex, "hex");
 
     const header = Buffer.concat([
         versionLE,
         prevHashLE,
-        merkleRoot,
-        nTimeLE,
-        bitsLE,
-        nonceLE
+        merkleRootLE,
+        nTime,
+        bits,
+        nonce
     ]);
 
-    const shareValid = validateShare(header, submission.difficulty);
+    console.log("Header:", header.toString("hex"));
 
-    if (!shareValid) 
-    {
-        return;
+    // validate share
+    const shareValid = validateShare(header, submission.difficulty);
+    if (!shareValid) {
+        console.log("Share invalid by difficulty");
+        return false;
     }
 
-    // --- concatenate transactions (coinbase + all template txs) ---
+    // build full block for submission
     const txCount = fullTxData.length + 1;
     const varintCount = encodeVarInt(txCount);
-    const txs = [coinbaseTx, ...fullTxData.map(tx => Buffer.from(tx, "hex"))];
-    const block = Buffer.concat([header, varintCount, ...txs]);
-    const blockHex = block.toString("hex");
+    const txs = [coinbaseBuf, ...fullTxData.map(tx => Buffer.from(tx, "hex"))];
 
-    dumpBlock(blockHex, `block_${jobId}.txt`);
+    const blockHex = Buffer.concat([
+        header,
+        varintCount,
+        ...txs
+    ]).toString("hex");
 
     try {
         await submitBlock(blockHex);
         console.log(`Submitted block ${jobId}: ${blockHex.length / 2} bytes`);
+        return true;
     } catch (err) {
         console.error("RPC submission error:", err.message || err);
+        return false;
     }
 }
-
 
 
 module.exports = { getJob, submitJob };

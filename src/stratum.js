@@ -85,7 +85,7 @@ async function handleMessage(message, socket)
                 socketRef: socket,
                 authorized: false,
                 username: null,
-                difficulty: 0.1,
+                difficulty: 0.01,
                 job: job,
                 extranonce1: extranonce1,
             };

@@ -1,5 +1,3 @@
-const bitcoin = require("bitcoinjs-lib");
-
 function isJSON(str) {
     try {
         JSON.parse(str.toString('utf8'));
@@ -9,8 +7,7 @@ function isJSON(str) {
     }
 }
 
-// extranonce1 it is a valid 4 byte hex it auutomatically rolls over 
-// after 2^32
+// extranonce1 it is a valid 4 byte hex
 let sessionCounter = 0;
 
 function generateExtranonce1() {
@@ -58,20 +55,4 @@ function swapHexEndian(hex) {
     return hex.match(/../g).reverse().join("");
 }
 
-function buildMerkleFromBranches(coinbaseTx, branchesHex) {
-    let hash = bitcoin.crypto.hash256(coinbaseTx); // BE
-
-    for (const branchHex of branchesHex) {
-        const branchBE = Buffer.from(branchHex, "hex");
-        const branchLE = Buffer.from(branchBE).reverse();
-
-        // miner does LE tree hashing
-        const hashLE = Buffer.from(hash).reverse();
-        hash = bitcoin.crypto.hash256(Buffer.concat([hashLE, branchLE]));
-    }
-
-    // LE merkle root for block header
-    return Buffer.from(hash).reverse();
-}
-
-module.exports = { isJSON, generateExtranonce1, encodeVarInt, swapHexEndian, buildMerkleFromBranches };
+module.exports = { isJSON, generateExtranonce1, encodeVarInt, swapHexEndian  };
