@@ -14,3 +14,5 @@ const session = {
     shares: 0,
     lastAdjust: Date.now()
 };
+
+I can use bits as target

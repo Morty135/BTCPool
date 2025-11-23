@@ -176,36 +176,34 @@ function sendMessage(message, socket)
 
 
 
-async function updateJobs()
-{
-    var currentHeight;
+async function updateJobs() {
+    let currentHash;
     try {
-        currentHeight = await getBestBlockHash();
-    }
-    catch (error) 
-    {
-        console.error("Error fetching best block hash:", error);
+        currentHash = await getBestBlockHash();
+    } catch (err) {
+        console.error("Error fetching tip:", err);
+        setTimeout(updateJobs, 5000);
         return;
     }
-    currentHeight = helperFunctions.swapHexEndian(currentHeight);
 
-    // keep a static copy of last height to skip pointless loops
-    if (updateJobs.lastHeight === currentHeight) {
-        console.log("No new blocks, skipping update.");
-    } else {
-        console.log("New tip detected, updating all miners...");
-        updateJobs.lastHeight = currentHeight;
+    const reversed = helperFunctions.swapHexEndian(currentHash);
 
-        for (let i = 0; i < sessions.length; i++) {
-            if(sessions[i].authorized == false){
-                return;
-            }
-            const newJob = await getJob();
-            session.job = newJob;
-            sendMessage(newJob, session.socketRef);
-        }
+    if (updateJobs.lastHash === reversed) {
+        setTimeout(updateJobs, 5000);
+        return;
     }
-    
+
+    console.log("New tip detected, updating miners...");
+    updateJobs.lastHash = reversed;
+
+    for (const session of sessions.values()) {
+        if (!session.authorized) continue;
+
+        const job = await getJob();
+        session.job = job;
+        sendMessage(job, session.socketRef);
+    }
+
     setTimeout(updateJobs, 5000);
 }
 updateJobs();

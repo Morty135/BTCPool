@@ -1,29 +1,26 @@
 const bitcoin = require("bitcoinjs-lib");
 
+// target for difficulty = 1
 const DIFF1_TARGET = BigInt(
-    "0x00000000FFFF0000000000000000000000000000000000000000000000000000"
+  "0x00000000FFFF0000000000000000000000000000000000000000000000000000"
 );
 
-// diff like 0.01, 0.001, 5.3, etc.
-// works for floats and produces correct BigInt targets
+// Convert share difficulty → BigInt target
 function difficultyToTarget(diff) {
-    if (diff <= 0) return DIFF1_TARGET;
+    if (diff <= 0) diff = 1;
 
-    // use 1e8 fixed-point arithmetic (same style as Bitcoin fees)
-    const diffFixed = BigInt(Math.round(diff * 1e8)); // e.g. 0.01 → 1,000,000
-    const scale = 100_000_000n;
+    // Use fixed point to avoid float precision issues
+    const SCALE = 1_000_000n;   // 6 decimal places
+    const diffFixed = BigInt(Math.round(diff * Number(SCALE)));
 
-    // scaled target
-    let target = (DIFF1_TARGET * scale) / diffFixed;
-
-    // target must never exceed DIFF1
-    if (target > DIFF1_TARGET) target = DIFF1_TARGET;
-
-    return target;
+    // target shrinks as difficulty increases
+    return (DIFF1_TARGET * SCALE) / diffFixed;
 }
 
 function validateShare(header, difficulty) {
     const hashBE = bitcoin.crypto.hash256(header);
+
+    // DO NOT reverse the header hash; miners compare BE
     const hashValue = BigInt("0x" + hashBE.toString("hex"));
 
     const shareTarget = difficultyToTarget(difficulty);

@@ -41,31 +41,34 @@ function buildBranches(coinbaseHashLE, txidsBE) {
 
 
 
-function buildRootFromBranches(coinbaseHashLE, merkleBranches) {
-    let hash = Buffer.from(coinbaseHashLE); // LE
-    let index = 0; // coinbase starts at index 0
+function hash256(hexLE) {
+    const buf = Buffer.from(hexLE, "hex"); // LE raw bytes
+    const h = bitcoin.crypto.hash256(buf); // BE
+    return Buffer.from(h).reverse().toString("hex"); // return LE again
+}
 
-    for (const branchHex of merkleBranches) {
-        const branchLE = Buffer.from(branchHex, "hex"); // LE
+function buildRoot(txidsBE) {
+    // Convert all to LE (byte-reversed)
+    let level = txidsBE.map(x =>
+        Buffer.from(x, "hex").reverse().toString("hex")
+    );
 
-        let concat;
-        if ((index & 1) === 0) {
-            // our hash is left child
-            concat = Buffer.concat([hash, branchLE]);
-        } else {
-            // our hash is right child
-            concat = Buffer.concat([branchLE, hash]);
+    while (level.length > 1) {
+        if (level.length % 2 === 1) {
+            level.push(level[level.length - 1]); // duplicate last LE
         }
 
-        const newHashBE = bitcoin.crypto.hash256(concat);
-        hash = Buffer.from(newHashBE).reverse(); // back to LE for next level
+        const next = [];
+        for (let i = 0; i < level.length; i += 2) {
+            // concat LE hex → hash256 (returns LE hex)
+            next.push(hash256(level[i] + level[i + 1]));
+        }
 
-        index = index >> 1;
+        level = next;
     }
 
-    return hash; // LE, 32 bytes
+    return level[0];  // LE hex
 }
 
 
-
-module.exports = { buildBranches, buildRootFromBranches };
+module.exports = { buildBranches, buildRoot };

@@ -8,3 +8,9 @@ CPU test miner included.
 Disabled version rolling for bitmain submit logic would break if enabled.
 
 materials for research: https://learnmeabitcoin.com/technical/block/
+
+https://www.rapidtables.com/convert/number/hex-to-decimal.html?x=692377D2
+https://learnmeabitcoin.com/technical/block/nonce/
+https://learnmeabitcoin.com/technical/block/#header
+
+these sites contain calculators for blockchain use

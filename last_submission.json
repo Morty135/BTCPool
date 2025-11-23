@@ -1,14 +1,14 @@
 {
-  "receivedAt": 1763820710933,
+  "receivedAt": 1763931706081,
   "params": [
     "Morty.ari",
-    "1763820707431",
+    "1763931704812",
     "00000000",
-    "6921c4a2",
-    "13beaaf8"
+    "69237636",
+    "d0bb2618"
   ],
   "id": 4,
   "method": "mining.submit",
   "difficulty": 0.01,
-  "extranonce1": "1e7a0000"
+  "extranonce1": "cdf50000"
 }
