@@ -7,6 +7,7 @@ mongoose.connect(process.env.DB_CONNECTION, {})
 
 const Miner = require('../models/miner');
 const Worker = require('../models/worker');
+const Share = require('../models/shares');
 
 // local in-memory session store — keep runtime/session data here, not in DB
 const sessions = new Map();
@@ -54,6 +55,8 @@ async function authorizeMiner(message)
         response.id = message.id;
         response.result = true;
         response.error = null;
+        response.workerID = worker._id;
+        response.minerID = miner._id;
 
     }
     catch (error) 
@@ -64,4 +67,17 @@ async function authorizeMiner(message)
     return response;
 }
 
-module.exports = { authorizeMiner, sessions };
+
+
+function saveShare(shareData)
+{
+    Share.create(shareData)
+    .then(() => {
+        console.log('Share saved');
+    })
+    .catch(err => {
+        console.error('Error saving share:', err);
+    });
+}
+
+module.exports = { authorizeMiner, sessions, saveShare };

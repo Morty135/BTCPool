@@ -6,6 +6,7 @@ const bitcoin = require("bitcoinjs-lib");
 const {validateShare} = require("./validateShare");
 const {dumpBlock} = require("./dumpBlock");
 const merkle = require("./merkle");
+const database = require("./database");
 
 const jobCache = new Map(); // jobId -> full data for block submission
 
@@ -150,8 +151,22 @@ async function submitJob(submission) {
     console.log("Header BE:", header.reverse().toString("hex"));
     console.log("Header length:", header.length);
 
+    shareValidity = validateShare(header, submission.difficulty);
+
+    shareData = {
+        // these are the object ids from mongodb
+        miner: submission.minerID,
+        worker: submission.workerID,
+        // raw submission data
+        timestamp: Date.now(),
+        difficulty: submission.difficulty,
+        accepted: shareValidity,
+        height: template.height
+    }
+    database.saveShare(shareData);
+
     // validate share
-    if (!validateShare(header, submission.difficulty)) {
+    if (!shareValidity) {
         console.log("Share invalid by difficulty");
         return false;
     }

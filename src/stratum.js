@@ -6,6 +6,7 @@ const helperFunctions = require("./helperFunctions");
 const fs = require("fs");
 const { getBestBlockHash } = require("./daemon");
 const crypto = require("crypto");
+const miner = require('../models/miner');
 
 const sessions = database.sessions;
 
@@ -88,6 +89,8 @@ async function handleMessage(message, socket)
                 difficulty: 0.01,
                 job: job,
                 extranonce1: extranonce1,
+                minerID: null,
+                WorkerID: null
             };
 
             sessions.set(socket.id, session);
@@ -100,9 +103,12 @@ async function handleMessage(message, socket)
         case 'mining.authorize': {
 
             const response = await database.authorizeMiner(message);
+            console.log(response.minerID);
 
             if (session) {
                 session.authorized = response.result;
+                session.minerID = response.minerID;
+                session.workerID = response.workerID;
                 sessions.set(socket.id, session);
             }
 
@@ -127,7 +133,9 @@ async function handleMessage(message, socket)
                 id: message.id,
                 method: message.method,
                 difficulty: session.difficulty,
-                extranonce1: session.extranonce1
+                extranonce1: session.extranonce1,
+                minerID: session.minerID,
+                workerID: session.workerID
             };
 
             console.log("miner: " + session.socketRef.id + " submitted a share");
