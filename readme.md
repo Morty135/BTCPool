@@ -14,3 +14,40 @@ https://learnmeabitcoin.com/technical/block/nonce/
 https://learnmeabitcoin.com/technical/block/#header
 
 these sites contain calculators for blockchain use
+
+# expected dataflow:
+
+## template
+previousblockhash (big-endian hex)
+bits (compact target, big-endian)
+version (big-endian)
+curtime (UNIX, big-endian)
+transactions[].txid (big-endian)
+
+## mining.notify
+version (big-endian)
+prevhash (little-endian)
+merkle branches (each txid reversed)
+nBits (big-endian)
+nTime (big-endian)
+
+## mining.submit
+job_id (big-endian)
+extranonce2 (big-endian)
+ntime (big-endian)
+nonce (big-endian)
+
+## submitblock
+
+1. reconstruct the coinbase (big-endian)
+2. hash twice (SHA256d)
+3. reverse the result (to LE) for the header
+### header:
+Version	(little-endian)
+Prev block	(little-endian)
+Merkle root	(little-endian)
+Time (little-endian)
+Bits (little-endian)
+Nonce (little-endian)
+### tx:
+(big-endian) as i got it
