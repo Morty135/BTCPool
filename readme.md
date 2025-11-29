@@ -25,11 +25,15 @@ these sites contain calculators for blockchain use
 - transactions[].txid (big-endian)
 
 ## mining.notify
-- version (big-endian)
+- ID
 - prevhash (little-endian)
+- coinb1
+- coinb2
 - merkle branches (each txid reversed)
+- version (big-endian)
 - nBits (big-endian)
 - nTime (big-endian)
+- clean jobs (bool)
 
 ## mining.submit
 - job_id (big-endian)

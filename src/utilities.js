@@ -1,3 +1,5 @@
+const crypto = require("crypto");
+
 function isJSON(str) {
     try {
         JSON.parse(str.toString('utf8'));
@@ -55,4 +57,10 @@ function swapHexEndian(hex) {
     return hex.match(/../g).reverse().join("");
 }
 
-module.exports = { isJSON, generateExtranonce1, encodeVarInt, swapHexEndian  };
+function sha256d(buf) {
+    return crypto.createHash("sha256").update(
+        crypto.createHash("sha256").update(buf).digest()
+    ).digest();
+}
+
+module.exports = { isJSON, generateExtranonce1, encodeVarInt, swapHexEndian, sha256d };

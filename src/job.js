@@ -1,16 +1,15 @@
 require('dotenv').config();
 const { getBlockTemplate, submitBlock, getBestBlockHash } = require("./daemon");
 const { buildCoinbaseTx } = require("./coinbase");
-const { encodeVarInt, swapHexEndian } = require("./helperFunctions");
 const bitcoin = require("bitcoinjs-lib");
 const {validateShare} = require("./validateShare");
 const {dumpBlock} = require("./dumpBlock");
 const merkle = require("./merkle");
 const database = require("./database");
+const utilities = require("./utilities");
+const fs = require('fs');
 
 const jobCache = new Map(); // jobId -> full data for block submission
-
-const fs = require('fs');
 
 async function getJob() {
     const template = await getBlockTemplate();
@@ -39,36 +38,42 @@ async function getJob() {
     const coinb1 = coinbaseTx.slice(0, idx);
     const coinb2 = coinbaseTx.slice(idx + TOTAL_LEN);
 
-    // --- REAL coinbase hash (LE) ---
-    const cbBuf = Buffer.from(coinbaseTx, "hex");
-    const cbHashBE = bitcoin.crypto.hash256(cbBuf);
-    const cbHashLE = Buffer.from(cbHashBE).reverse();
-
-    // --- REAL merkle branches ---
-    const txidsBE = template.transactions.map(t => t.txid);
-    const merkleBranches = merkle.buildBranches(cbHashLE, txidsBE);
+    // --- merkle branches ---
+    const txids = template.transactions.map(tx => tx.txid);
+    const branches = merkle.branches(txids);
 
     // --- header fields ---
     const prevHashLE = Buffer.from(template.previousblockhash, "hex")
         .reverse()
         .toString("hex");
 
-    const versionHex = template.version
-        .toString(16)
-        .padStart(8, "0");
-
-    const bitsHex = template.bits.padStart(8, "0");
-    const ntimeHex = template.curtime.toString(16).padStart(8, "0");
+    const version = template.version.toString(16).padStart(8, "0");
+    const nBits = template.bits
+    const nTime = template.curtime.toString(16).padStart(8, "0")
 
     // --- cache for submit ---
     jobCache.set(jobId, {
-        template,
+        version,
+        bits: nBits,
+        ntimeInit: nTime,
+        prevhashBE: template.previousblockhash,
+        prevhashLE: prevHashLE,
         coinb1,
         coinb2,
-        fullTxData: template.transactions.map(tx => tx.data)
+        extranonce2_size: EX2_LEN,
+        txids,
+        branches,
+        height: template.height,
     });
 
-    return {
+    console.log("JOB HEADER DEBUG:");
+    console.log("version:", version);
+    console.log("prevhashLE:", prevHashLE);
+    console.log("merkle branches:", branches);
+    console.log("ntime:", nTime);
+    console.log("bits:", nBits);
+
+    const job = {
         id: null,
         method: "mining.notify",
         params: [
@@ -76,13 +81,15 @@ async function getJob() {
             prevHashLE,
             coinb1,
             coinb2,
-            merkleBranches,
-            versionHex,
-            bitsHex,
-            ntimeHex,
+            branches,
+            version,
+            nBits,
+            nTime,
             true
         ]
     };
+
+    return job;
 }
 
 
@@ -95,63 +102,81 @@ async function submitJob(submission) {
     const job = jobCache.get(jobId);
     if (!job) return false;
 
-    const { template, coinb1, coinb2, fullTxData } = job;
+    const jobData = {
+        //--- miner submission ---
+        username,                 // "miner.worker"
+        jobId,                    // "1764457448832"
+        extranonce2: extraNonce2, // raw miner ex2 (hex string)
+        nTimeMiner: nTimeHex,     // miner-submitted ntime (BE hex)
+        nonce: nonceHex,          // miner-submitted nonce (BE hex)
+        receivedAt: submission.receivedAt,
 
-    const extranonce1 = submission.extranonce1;       // DO NOT pad
-    const extranonce2 = extraNonce2.padStart(8, "0"); // pad miner's ex2
+        //--- session-level data ---
+        extranonce1: submission.extranonce1,  // from session
+        difficulty: submission.difficulty,
+        minerID: submission.minerID,
+        workerID: submission.workerID,
 
-    const coinbaseHex = coinb1 + extranonce1 + extranonce2 + coinb2;
-    const coinbaseBuf = Buffer.from(coinbaseHex, "hex");
+        //--- job-level data (from jobCache) ---
+        versionBE: job.version,
+        bitsBE: job.bits,
+        ntimeInitBE: job.ntimeInit,        // template's initial nTime
+        prevhashLE: job.prevhashLE,        // for header
+        prevhashBE: job.prevhashBE,        // optional (for block assembly)
 
-    // coinbase txid
-    const coinbaseHashBE = bitcoin.crypto.hash256(coinbaseBuf);
-    const coinbaseHashBEhex = Buffer.from(coinbaseHashBE).toString("hex");
+        coinb1: job.coinb1,
+        coinb2: job.coinb2,
 
-    // txid list in BE
-    const txidsBE = template.transactions.map(t => t.txid);
+        extranonce2_size: job.extranonce2_size,
 
-    // prepend real coinbase
-    const allTxidsBE = [coinbaseHashBEhex, ...txidsBE];
+        branchesLE: job.branches,          // merkle siblings (LE hex)
+        txidsBE: job.txids,                // optional, huge, but fine
 
-    // merkle root (LE hex)
-    const merkleRootLEhex = merkle.buildRoot(allTxidsBE);
-    const merkleRootLE = Buffer.from(merkleRootLEhex, "hex");
+        height: job.height,
+        cleanJobs: job.cleanJobs,
+        jobCreatedAt: job.created
+    };
 
-    // header fields
-    const versionHex = template.version.toString(16).padStart(8, "0");
-    const versionLE = Buffer.from(versionHex.match(/../g).reverse().join(""), "hex");
+    const ex1 = jobData.extranonce1;            
+    const ex2 = jobData.extranonce2.padStart(jobData.extranonce2_size * 2, "0");
 
-    const prevHash = Buffer.from(template.previousblockhash, "hex").reverse();
+    const coinbaseHex = jobData.coinb1 + ex1 + ex2 + jobData.coinb2;
+    const coinbase = Buffer.from(coinbaseHex, "hex");
+    const coinbaseHashBE = utilities.sha256d(coinbase);  // BE
 
-    const nTime = Buffer.from(nTimeHex.padStart(8, "0"), "hex").reverse();
-    const bits  = Buffer.from(template.bits.padStart(8, "0"), "hex").reverse();
-    const nonce = Buffer.from(nonceHex.padStart(8, "0"), "hex").reverse();
+    let root = coinbaseHashBE;
 
-    const header = Buffer.concat([
-        versionLE,
-        prevHash,
-        merkleRootLE,
-        nTime,
-        bits,
-        nonce
-    ]);
+    for (const branchLE of jobData.branchesLE) {
+        const branchBE = Buffer.from(branchLE, "hex").reverse();  
+        root = utilities.sha256d(Buffer.concat([root, branchBE]));
+    }
 
-    console.log("versionHex:", versionHex);
-    console.log("prevHashLE:", template.previousblockhash);
-    console.log("merkleRootLE:", merkleRootLEhex);
+    const merkleRootLE = Buffer.from(root).reverse().toString("hex");
 
-    console.log("ntimeHex:", nTimeHex);
+    const headerHex =
+    Buffer.from(jobData.versionBE, "hex").reverse().toString("hex") +
+    jobData.prevhashLE +                                  // already LE
+    merkleRootLE +                                        // LE
+    Buffer.from(jobData.nTimeMiner, "hex").reverse().toString("hex") +
+    Buffer.from(jobData.bitsBE, "hex").reverse().toString("hex") +
+    Buffer.from(jobData.nonce, "hex").reverse().toString("hex");
 
-    console.log("bitsLE:", bits.toString("hex"));
+    console.log("RECON HEADER:", headerHex);
 
-    console.log("nonceHex:", nonceHex);
+    const header = Buffer.from(headerHex, "hex");
 
+    const headerHashBE = utilities.sha256d(header);        // BE
 
-    console.log("Header:", header.toString("hex"));
-    console.log("Header BE:", header.reverse().toString("hex"));
-    console.log("Header length:", header.length);
+    const hashValue = BigInt("0x" + headerHashBE.toString("hex"));
 
-    shareValidity = validateShare(header, submission.difficulty);
+    // share target
+    const DIFF1 = BigInt("0x00000000FFFF0000000000000000000000000000000000000000000000000000");
+    const target = DIFF1 / BigInt(jobData.difficulty);
+
+    console.log(target.toString(16));
+    console.log(headerHashBE.toString("hex"));
+
+    const isShareValid = hashValue <= target;
 
     shareData = {
         // these are the object ids from mongodb
@@ -160,20 +185,20 @@ async function submitJob(submission) {
         // raw submission data
         timestamp: Date.now(),
         difficulty: submission.difficulty,
-        accepted: shareValidity,
-        height: template.height
+        accepted: isShareValid,
+        height: jobData.height
     }
     database.saveShare(shareData);
 
     // validate share
-    if (!shareValidity) {
+    if (!isShareValid) {
         console.log("Share invalid by difficulty");
         return false;
     }
 
     // build block
     const txCount = fullTxData.length + 1;
-    const varintCount = encodeVarInt(txCount);
+    const varintCount = utilities.encodeVarInt(txCount);
     const txs = [coinbaseBuf, ...fullTxData.map(tx => Buffer.from(tx, "hex"))];
 
     const blockHex = Buffer.concat([

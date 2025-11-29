@@ -2,7 +2,7 @@ require('dotenv').config();
 const net = require('net');
 const { getJob, submitJob } = require("./job");
 const database = require("./database");
-const helperFunctions = require("./helperFunctions");
+const helperFunctions = require("./utilities");
 const fs = require("fs");
 const { getBestBlockHash } = require("./daemon");
 const crypto = require("crypto");
@@ -86,7 +86,7 @@ async function handleMessage(message, socket)
                 socketRef: socket,
                 authorized: false,
                 username: null,
-                difficulty: 0.01,
+                difficulty: 1,
                 job: job,
                 extranonce1: extranonce1,
                 minerID: null,

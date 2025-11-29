@@ -1,42 +1,36 @@
 const bitcoin = require("bitcoinjs-lib");
+const utilities = require("./utilities");
 
-function buildBranches(coinbaseHashLE, txidsBE) {
-    // Build the full list of tx hashes in LE form
-    let level = [
-        coinbaseHashLE,
-        ...txidsBE.map(x => Buffer.from(x, "hex").reverse())
-    ];
-
-    const branches = [];
+function branches(txids) {
+    // Layer 0: raw txids → Buffers
+    let layer = txids.map(txid => Buffer.from(txid, "hex"));
     let index = 0; // coinbase is always index 0
+    const branches = [];
 
-    while (level.length > 1) {
+    while (layer.length > 1) {
+        const isEven = index % 2 === 0;
+        const siblingIndex = isEven ? index + 1 : index - 1;
 
-        // duplicate last hash if odd number of entries
-        if (level.length % 2 === 1) {
-            level.push(level[level.length - 1]);
+        // sibling for this layer
+        const sibling = layer[siblingIndex] || layer[layer.length - 1];
+        branches.push(sibling);
+
+        // build next layer
+        const nextLayer = [];
+        for (let i = 0; i < layer.length; i += 2) {
+            const left = layer[i];
+            const right = layer[i + 1] || left; // duplicate if odd
+            nextLayer.push(utilities.sha256d(Buffer.concat([left, right])));
         }
 
-        // sibling for this level
-        const sibling = level[index ^ 1];
-        branches.push(sibling.toString("hex"));
-
-        // build next level
-        const next = [];
-        for (let i = 0; i < level.length; i += 2) {
-            const h = bitcoin.crypto.hash256(
-                Buffer.concat([level[i], level[i + 1]])
-            );
-            next.push(Buffer.from(h).reverse());
-        }
-
-        // move index to next level
-        index = index >> 1;
-
-        level = next;
+        layer = nextLayer;
+        index = Math.floor(index / 2);
     }
 
-    return branches;
+    // convert branches to little-endian hex for Stratum
+    return branches.map(b =>
+        Buffer.from(b).reverse().toString("hex")
+    );
 }
 
 
@@ -71,4 +65,4 @@ function buildRoot(txidsBE) {
 }
 
 
-module.exports = { buildBranches, buildRoot };
+module.exports = { branches, buildRoot };
