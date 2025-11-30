@@ -16,11 +16,11 @@ async function getJob() {
     const jobId = Date.now().toString();
 
     // --- extranonce setup ---
-    const EX1_LEN = 8;  // 4 bytes = 8 hex chars
-    const EX2_LEN = 8;  // 4 bytes = 8 hex chars
-    const TOTAL_LEN = EX1_LEN + EX2_LEN;
+    const EX1_BYTES = 4; // 4 bytes
+    const EX2_BYTES = 4; // 4 bytes
+    const TOTAL_BYTES = EX1_BYTES + EX2_BYTES;
 
-    const extraNonceMarker = "ff".repeat(TOTAL_LEN / 2);
+    const extraNonceMarker = "ff".repeat(TOTAL_BYTES);
 
     // --- build coinbase ---
     const coinbaseTx = buildCoinbaseTx(
@@ -36,7 +36,7 @@ async function getJob() {
     }
 
     const coinb1 = coinbaseTx.slice(0, idx);
-    const coinb2 = coinbaseTx.slice(idx + TOTAL_LEN);
+    const coinb2 = coinbaseTx.slice(idx + TOTAL_BYTES * 2);
 
     // --- merkle branches ---
     const txids = template.transactions.map(tx => tx.txid);
@@ -60,18 +60,11 @@ async function getJob() {
         prevhashLE: prevHashLE,
         coinb1,
         coinb2,
-        extranonce2_size: EX2_LEN,
+        extranonce2_size: EX2_BYTES,
         txids,
         branches,
         height: template.height,
     });
-
-    console.log("JOB HEADER DEBUG:");
-    console.log("version:", version);
-    console.log("prevhashLE:", prevHashLE);
-    console.log("merkle branches:", branches);
-    console.log("ntime:", nTime);
-    console.log("bits:", nBits);
 
     const job = {
         id: null,
@@ -98,6 +91,7 @@ async function getJob() {
 
 async function submitJob(submission) {
     const [username, jobId, extraNonce2, nTimeHex, nonceHex] = submission.params;
+    const minerVersion = submission.params[5];
 
     const job = jobCache.get(jobId);
     if (!job) return false;
@@ -118,7 +112,7 @@ async function submitJob(submission) {
         workerID: submission.workerID,
 
         //--- job-level data (from jobCache) ---
-        versionBE: job.version,
+        versionBE: minerVersion || job.version,
         bitsBE: job.bits,
         ntimeInitBE: job.ntimeInit,        // template's initial nTime
         prevhashLE: job.prevhashLE,        // for header
@@ -158,23 +152,20 @@ async function submitJob(submission) {
     jobData.prevhashLE +                                  // already LE
     merkleRootLE +                                        // LE
     Buffer.from(jobData.nTimeMiner, "hex").reverse().toString("hex") +
-    Buffer.from(jobData.bitsBE, "hex").reverse().toString("hex") +
+    jobData.bitsBE +
     Buffer.from(jobData.nonce, "hex").reverse().toString("hex");
-
-    console.log("RECON HEADER:", headerHex);
 
     const header = Buffer.from(headerHex, "hex");
 
     const headerHashBE = utilities.sha256d(header);        // BE
-
-    const hashValue = BigInt("0x" + headerHashBE.toString("hex"));
+    const hashValue = BigInt("0x" + headerHashBE.toString("hex"))
 
     // share target
     const DIFF1 = BigInt("0x00000000FFFF0000000000000000000000000000000000000000000000000000");
     const target = DIFF1 / BigInt(jobData.difficulty);
 
-    console.log(target.toString(16));
-    console.log(headerHashBE.toString("hex"));
+    const shareDiff = Number(DIFF1 / hashValue);
+    console.log("effective share diff ~= ", shareDiff);
 
     const isShareValid = hashValue <= target;
 
@@ -189,6 +180,17 @@ async function submitJob(submission) {
         height: jobData.height
     }
     database.saveShare(shareData);
+
+    console.log("JOB VS SUBMIT:");
+    console.log("  versionBE:", jobData.versionBE);
+    console.log("  prevhashLE:", jobData.prevhashLE);
+    console.log("  nTimeMiner:", jobData.nTimeMiner);
+    console.log("  nonce:", jobData.nonce);
+    console.log("  ex1:", ex1);
+    console.log("  ex2:", ex2);
+    console.log("  merkleRootLE:", merkleRootLE);
+    console.log("  header:", headerHex);
+    console.log("  hash:", headerHashBE.toString("hex"));
 
     // validate share
     if (!isShareValid) {

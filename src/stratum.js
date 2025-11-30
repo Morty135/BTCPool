@@ -14,21 +14,35 @@ const sessions = database.sessions;
 
 const server = net.createServer((socket) => 
 {
-    console.log('Miner connected');
+    socket.id = crypto.randomBytes(8).toString("hex");
+    console.log("Miner connected:", socket.id);
 
-    socket.on('data', (data) => 
-    {
-        let message = data;
-        
-        if (helperFunctions.isJSON(data)) 
-        {
-            message = JSON.parse(data.toString('utf8'));
+    let buffer = "";
+
+    socket.on("data", chunk => {
+        buffer += chunk.toString("utf8");
+
+        let index;
+        while ((index = buffer.indexOf("\n")) !== -1) {
+
+            const line = buffer.slice(0, index).trim();
+            buffer = buffer.slice(index + 1);
+
+            if (line.length === 0) continue;
+
+            let message;
+
+            try {
+                message = JSON.parse(line);
+            } catch (e) {
+                console.log("INVALID JSON FROM MINER:", line);
+                continue;
+            }
+            //fs.appendFileSync('./pool.log', line + '\n');
+            console.log("Received message:", message);
+
+            handleMessage(message, socket);
         }
-
-        logMessage = JSON.stringify(message) + '\n';
-        fs.appendFileSync('./pool.log', logMessage);
-
-        handleMessage(message, socket);
     });
 
     socket.on('end', () => 
@@ -46,13 +60,6 @@ const server = net.createServer((socket) =>
 
 
 
-server.on("connection", (socket) => {
-    socket.id = crypto.randomBytes(8).toString("hex");
-    console.log("Miner connected:", socket._id);
-});
-
-
-
 server.listen(process.env.STRATUM_PORT, process.env.STRATUM_HOST, () => 
 {
     console.log(`Stratum server listening on ${process.env.STRATUM_HOST}:${process.env.STRATUM_PORT}`);
@@ -66,20 +73,21 @@ async function handleMessage(message, socket)
 
     switch (message.method) 
     {
-        case 'mining.subscribe': {
-
-            const job = await getJob();
-            const extranonce1 = helperFunctions.generateExtranonce1();
-
+        case "mining.configure": {
             sendMessage({
                 id: message.id,
-                result: [
-                    [["mining.set_difficulty", "subid1"], ["mining.notify", "subid2"]],
-                    extranonce1,
-                    4
-                ],
-                error: null
+                error: null,
+                result: {
+                    "version-rolling": true,
+                    "version-rolling.mask": "1fffe000"
+                }
             }, socket);
+            return;
+        }
+
+        case 'mining.subscribe': {
+            const extranonce1 = helperFunctions.generateExtranonce1();
+            const extranonce2_size = 4;
 
             session = {
                 createdAt: Date.now(),
@@ -87,16 +95,34 @@ async function handleMessage(message, socket)
                 authorized: false,
                 username: null,
                 difficulty: 1,
-                job: job,
-                extranonce1: extranonce1,
+                job: null,
+                extranonce1,
+                extranonce2_size,
                 minerID: null,
-                WorkerID: null
+                workerID: null
             };
 
             sessions.set(socket.id, session);
 
-            sendMessage({"id": null, "method": "mining.set_difficulty", "params": [session.difficulty]}, socket);
+            sendMessage({
+                id: message.id,
+                result: [
+                    [
+                        ["mining.set_difficulty", "1"],
+                        ["mining.notify", "1"]
+                    ],
+                    extranonce1,
+                    extranonce2_size
+                ],
+                error: null
+            }, socket);
+
+            sendMessage({ id: null, method: "mining.set_difficulty", params: [session.difficulty] }, socket);
+
+            const job = await getJob();
+            session.job = job;
             sendMessage(job, socket);
+
             break;
         }
 
@@ -151,15 +177,6 @@ async function handleMessage(message, socket)
             break;
         }
 
-        case 'mining.configure': {
-            sendMessage({
-                id: message.id,
-                result: { "version-rolling": true },
-                error: null
-            }, socket);
-            break;
-        }
-
         default:
             console.log("unknown method: ", message.method);
             sendMessage({
@@ -177,7 +194,7 @@ function sendMessage(message, socket)
 {
     message = JSON.stringify(message) + '\n';
 
-    fs.appendFileSync('./pool.log', message);
+    //fs.appendFileSync('./pool.log', message);
 
     socket.write(message);
 }

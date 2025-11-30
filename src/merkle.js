@@ -3,7 +3,9 @@ const utilities = require("./utilities");
 
 function branches(txids) {
     // Layer 0: raw txids → Buffers
-    let layer = txids.map(txid => Buffer.from(txid, "hex"));
+    let layer = txids.map(txid =>
+        Buffer.from(txid, "hex").reverse()
+    );
     let index = 0; // coinbase is always index 0
     const branches = [];
 
