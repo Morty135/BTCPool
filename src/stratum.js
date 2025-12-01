@@ -129,7 +129,6 @@ async function handleMessage(message, socket)
         case 'mining.authorize': {
 
             const response = await database.authorizeMiner(message);
-            console.log(response.minerID);
 
             if (session) {
                 session.authorized = response.result;
