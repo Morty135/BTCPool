@@ -7,32 +7,37 @@ function encodeHeight(height) {
     return Buffer.from(bytes.reverse());
 }
 
-function buildCoinbaseTx(template, payoutAddress, extraNoncePlaceholder = 8) 
-{
-    const network = template.network === "testnet" ? bitcoin.networks.testnet : bitcoin.networks.bitcoin;
-    const tx = new bitcoin.Transaction();
+function makePushFromHex(hex) {
+    const buf = Buffer.from(hex, "hex");
+    const len = Buffer.from([buf.length]);
+    return Buffer.concat([len, buf]);
+}
 
-    // --- Coinbase input ---
+function buildCoinbaseTx(template, payoutAddress, extranonce1, zeroBuffer) {
+    const network = template.network === "testnet"
+        ? bitcoin.networks.testnet
+        : bitcoin.networks.bitcoin;
+
     const heightBuf = encodeHeight(template.height);
-    const heightScript = Buffer.concat([Buffer.from([heightBuf.length]), heightBuf]);
+    const heightPush = Buffer.concat([Buffer.from([heightBuf.length]), heightBuf]);
 
-    // --- extranonce placeholder (string) ---
-    let extranonceBuf = Buffer.from(extraNoncePlaceholder, "hex");
+    const ex1Push = makePushFromHex(extranonce1); 
 
-    const tagBuf = Buffer.from(process.env.POOL_TAG || "", "ascii");
-    const tagPush = Buffer.concat([Buffer.from([tagBuf.length]), tagBuf]);
+    const scriptSig = Buffer.concat([
+        heightPush,
+        ex1Push,
+        zeroBuffer,
+    ]);
 
-    const scriptSig = Buffer.concat([heightScript, extranonceBuf, tagPush]);
+    const tx = new bitcoin.Transaction();
     tx.addInput(Buffer.alloc(32, 0), 0xffffffff, 0xffffffff, scriptSig);
 
-    // --- Coinbase output (reward) ---
     const p2pkh = bitcoin.address.toOutputScript(payoutAddress, network);
     tx.addOutput(p2pkh, template.coinbasevalue);
 
-    // --- Witness commitment (if segwit block) ---
     if (template.default_witness_commitment) {
-        const commitmentScript = Buffer.from(template.default_witness_commitment, "hex");
-        tx.addOutput(commitmentScript, 0);
+        const c = Buffer.from(template.default_witness_commitment, "hex");
+        tx.addOutput(c, 0);
     }
 
     return tx.toHex();

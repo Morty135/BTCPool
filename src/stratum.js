@@ -119,7 +119,7 @@ async function handleMessage(message, socket)
 
             sendMessage({ id: null, method: "mining.set_difficulty", params: [session.difficulty] }, socket);
 
-            const job = await getJob();
+            const job = await getJob(extranonce1);
             session.job = job;
             sendMessage(job, socket);
 
@@ -223,7 +223,7 @@ async function updateJobs() {
     for (const session of sessions.values()) {
         if (!session.authorized) continue;
 
-        const job = await getJob();
+        const job = await getJob(session.extranonce1);
         session.job = job;
         sendMessage(job, session.socketRef);
     }

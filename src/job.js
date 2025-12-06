@@ -8,35 +8,45 @@ const merkle = require("./merkle");
 const database = require("./database");
 const utilities = require("./utilities");
 const fs = require('fs');
+const { Z_ERRNO } = require('zlib');
 
 const jobCache = new Map(); // jobId -> full data for block submission
 
-async function getJob() {
+async function getJob(extranonce1) {
     const template = await getBlockTemplate();
     const jobId = Date.now().toString();
 
-    // --- extranonce setup ---
-    const EX1_BYTES = 4; // 4 bytes
+    // --- extranonce setup --
     const EX2_BYTES = 4; // 4 bytes
-    const TOTAL_BYTES = EX1_BYTES + EX2_BYTES;
 
-    const extraNonceMarker = "ff".repeat(TOTAL_BYTES);
+    const zeroBuffer = Buffer.from([0x00]);
 
     // --- build coinbase ---
     const coinbaseTx = buildCoinbaseTx(
         template,
         process.env.POOL_ADDRESS,
-        extraNonceMarker
+        extranonce1,
+        zeroBuffer
     );
 
-    // split coinbase
-    const idx = coinbaseTx.indexOf(extraNonceMarker);
-    if (idx === -1) {
-        throw new Error("Extranonce marker missing in coinbase");
-    }
+    console.log("Coinbase TX:", coinbaseTx);
 
-    const coinb1 = coinbaseTx.slice(0, idx);
-    const coinb2 = coinbaseTx.slice(idx + TOTAL_BYTES * 2);
+    // --- split coinbase ---
+
+    const splitMarker = 
+        extranonce1 + 
+        zeroBuffer.toString("hex");   // the OP_0 byte
+
+    const start = coinbaseTx.indexOf(splitMarker);
+        if (start === -1) throw new Error("prefix not found");
+
+    const end = start + splitMarker.length;
+
+    const coinb1 = coinbaseTx.slice(0, end);
+    const coinb2 = coinbaseTx.slice(end);
+
+    console.log("Coinbase Part 1:", coinb1);
+    console.log("Coinbase Part 2:", coinb2);
 
     // --- merkle branches ---
     const txids = template.transactions.map(tx => tx.txid);
